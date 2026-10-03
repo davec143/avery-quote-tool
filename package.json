@@ -9,7 +9,7 @@
     "test:samples": "node scripts/run-samples.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

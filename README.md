@@ -1,79 +1,75 @@
-# Avery Quote Tool (v0.8)
+# Avery Quote Tool (v0.9)
 
-Internal tool for Avery LED. Upload a competitor quote (PDF). The tool reads the line items, finds the Avery LED
-substitute for each one, and produces a branded savings summary: their item vs our item, savings per line, and the total.
+A team-reviewed product comparison for Avery LED. Upload a competitor's text-based PDF, check its extracted lines, select suitable Avery products, and prepare a branded comparison. The output explains the compared scope, specification differences, purchase quantities, exclusions, and next step.
 
-Kryz (or anyone on the team) reviews every match before a summary goes out. That's on purpose for v0.8.
+## Workflow
 
-## How a quote is processed
+1. Load the Avery catalog through Shopify sync or a product export CSV.
+2. Upload up to five PDFs, each at most 10 MB. Scanned PDFs need a text-based export; OCR and manual line creation are not included.
+3. Check **every** extracted source line against the original PDF, including unit prices and quantities. Confirm USD: currency conversion is not supported.
+4. Review suggested substitutes. Known type, voltage, wet-rating, connector-width and undersized-driver conflicts are rejected. Unknown or differing specifications require customer-facing notes. Check roll lengths, required length, brightness, cut increments, AC input, dimming and installation requirements against datasheets.
+5. Avery quantities always mean **pieces required**, regardless of pricing mode. Edit them to reflect the actual system requirement. Click **Save** to refresh prices and controls after edits.
+6. Enter the customer, project, specification notes and available terms. Unknown lead time, payment terms and validity are displayed as “To be confirmed.” Internal notes are separate from customer-facing notes.
+7. Complete the USD and quantity review checks, then **Confirm & make summary**. Confirmation validates and freezes the displayed pricing, catalog descriptions, customer details and branding. Later catalog or settings changes do not change that document. Editing a confirmed comparison returns it to review.
+8. Export the reviewed document with **Print / save as PDF** or **Copy as text**. Draft and expired summaries disable these buttons. Browser printing itself cannot be prevented; drafts carry a visible warning in the printed document.
 
-1. **Read the PDF.** The AI pulls out each line: part number, description, quantity, unit price. If no AI is set up, a
-   built-in reader handles the standard "Line / Item / Price / Qty / Final Price" layout (Elemental / Diode LED quotes).
-2. **Match each line**, in this order:
-   1. **Compatibility list.** Exact competitor SKU, or a wildcard like `DI-24V-VL8MN3-30K-*`.
-   2. **AI substitute search** against the Avery catalog. The AI can only pick SKUs that exist in the catalog; anything
-      else is thrown out and marked N/A.
-   3. **Built-in rules** if no AI is configured (type, colour temperature, brightness class, wattage).
-3. **Savings are calculated in code, not by the AI:** their price × their qty − our price × our qty.
-4. **N/A lines** (channels, fixtures, controls, anything Avery doesn't carry), lines with no competitor price, and lines
-   you untick are left out of the summary.
-5. Matches Kryz changes can be saved back to the compatibility list ("Remember"), so the next quote gets them automatically.
+## Honest pricing
 
-## Pages
+- **Whole-pack purchase cost** is the default for new settings. Pieces of the same SKU across included lines are combined before rounding up to cases or boxes. Seven pieces needed in two source lines, in cases of ten, cost one case. The purchase schedule lists packs, pieces supplied, excess pieces, pack price and actual product cost.
+- Shared pack cost is allocated across source lines in proportion to the required pieces, using exact cents. The line totals reconcile to the purchase schedule.
+- **Per-piece comparison estimate** remains available for existing workflows. It assumes loose pieces can be supplied. It is explicitly labelled as an estimate and can understate a full-pack purchase; confirm Avery supply terms before ordering.
+- Higher-cost Avery matches remain included by default. They appear as additional cost and reduce overall savings.
+- Missing prices, invalid quantities, unknown pack counts and invalid catalog prices cannot enter the compared subtotals. Excluded source lines and their known source amounts are shown separately.
+- Both compared subtotals exclude tax, freight, installation, controls and unlisted accessories. The comparison is not a complete installed-project budget or final sales order.
 
-| Page | What it's for |
-|---|---|
-| Quotes | Upload PDFs, see history and savings |
-| Quote review | Check and fix each match, enter missing competitor prices, then confirm |
-| Summary | Branded, printable page (Print → Save as PDF), or copy as plain text |
-| Compatibility list | Upload or download the CSV, add or remove single rows. Template at `/api/compat-template` |
-| Catalog | Sync from the Avery Shopify store, or upload a Shopify product export CSV |
-| Settings | AI provider/model/key, intake email, logo and colours, pricing basis, Shopify credentials |
+## Matching and learning
 
-## AI providers
+Exact and wildcard compatibility mappings are tried first, then the configured AI, then built-in rules. Every source goes through deterministic compatibility checks. AI may select only catalog SKUs. Saved mappings and AI suggestions still require review; an SKU mapping alone cannot prove system suitability.
 
-Pick one on the Settings page. Switch any time; keys are saved per provider.
+“Remember” is opt-in, unchecked by default, and saved only at confirmation. It saves the SKU **and Avery pieces per source unit**. Compatibility CSVs accept `competitor_brand,competitor_sku,competitor_description,avery_sku,notes,units_per_line_item`. Old five-column files default the multiplier to one. Wildcards can span different lengths; verify each source line separately.
 
-- Anthropic (Claude)
-- OpenAI (GPT)
-- Google (Gemini)
-- OpenRouter (one key, many models)
-- Any OpenAI-compatible endpoint (Groq, Together, Azure OpenAI, a local Ollama…) via "Custom endpoint"
-- None (built-in rules only)
+## Run and verify
 
-Model names change often. Type the current model name from the provider's docs into the Model field.
-
-## Pricing
-
-Avery sells by the case (10 pcs) or box (80 pcs). By default the tool compares **price per piece** (case price ÷ 10).
-Change it to full pack price in Settings → Pricing.
-
-## Run locally
+Use Node.js 22, matching `.node-version` and the deployment configuration.
 
 ```bash
-npm install
-cp .env.example .env.local   # set APP_PASSWORD
-npm run dev                  # http://localhost:3000
+npm ci
+cp .env.example .env.local
+# Set APP_PASSWORD in .env.local.
+npm run dev
+npm test
+npm run build
 ```
 
-Test all sample quotes from the command line:
+The automated tests use a disposable SQLite database and mock provider responses. They do not call real AI or Shopify services.
+
+Optional isolated demonstration, using sample products and prices:
 
 ```bash
-DATA_DIR=/tmp/aq node scripts/run-samples.mjs "/path/to/sample quotes" "/path/to/products_export.csv"
+DATA_DIR=/tmp/avery-demo node scripts/seed-demo.mjs
+APP_PASSWORD=choose-a-local-password DATA_DIR=/tmp/avery-demo npm run dev
 ```
 
-## Deploy on Railway
+The demo seeder refuses to run when the quote database already contains quotes. Never use a production data directory for demonstration or sample runs.
 
-1. Push this folder to a GitHub repo and create a Railway service from it. Railway detects Next.js.
-2. Add a **Volume** mounted at `/data`.
-3. Variables: `APP_PASSWORD=<team password>`, `DATA_DIR=/data`. AI keys can go here or in Settings.
-4. Start command: `npm start` (build: `npm run build`).
+```bash
+DATA_DIR=/tmp/avery-samples node scripts/run-samples.mjs "/path/to/source PDFs" "/path/to/products_export.csv"
+```
 
-Everything (quotes, uploaded PDFs, compatibility list, settings, logo) is stored in one SQLite file under `DATA_DIR`.
-Back up the volume.
+Sample runs exit unsuccessfully if processing fails or the parsed line sum differs from the printed `Quote Total`. The printed total can include freight, tax or discounts, so investigate the source instead of assuming an arithmetic error. Human review remains necessary for every source PDF.
 
-## Shopify sync
+## Providers and Shopify
 
-Settings → Shopify: store domain (`something.myshopify.com`) and an Admin API token from a custom app with
-`read_products` and `read_inventory`. Then Catalog → Sync now. Only active, priced products are pulled; samples
-and test items are skipped.
+Settings supports Anthropic, OpenAI, Gemini, OpenRouter, a custom OpenAI-compatible endpoint, or no AI. Keys are saved per provider. The custom endpoint is used only with the custom provider. Calls time out instead of hanging indefinitely. Select a supported model from the provider's current documentation.
+
+Shopify requires the store's `.myshopify.com` domain and an Admin API token with appropriate product/inventory read scopes. Sync uses Admin API `2026-07`. Empty results, duplicate SKUs, page limits and products with more than 100 variants fail before replacing the catalog; use a complete CSV export for larger catalogs. Unknown case/box piece counts remain visibly invalid until the catalog is corrected.
+
+## Deployment and storage
+
+Production requires `APP_PASSWORD`. Without it, protected routes return HTTP 503. Server actions and sensitive download routes also check authentication directly. Sessions use signed, unique tokens with a seven-day server-checked expiry; users must sign in again after upgrading from v0.8.
+
+For Railway, mount a persistent volume at `/data`, set `DATA_DIR=/data`, use Node.js 22, build with `npm run build`, and start with `npm start`. Use one writable app instance per SQLite database. Back up the volume before upgrades. Database migrations add columns to existing tables.
+
+Old “done” quotes without a saved v0.9 snapshot are shown as drafts until reviewed and confirmed again. Existing pricing-mode settings are preserved; check Settings and select whole-pack purchase cost if that matches Avery's selling terms.
+
+SQLite stores quotes, uploads, catalog, mappings, settings and uploaded logos. Provider and Shopify keys are stored in settings; protect and restrict access to backups. This remains a shared team-password tool, without individual user roles, an approval audit trail, public customer links, automatic sending, order submission, or warranty/stock guarantees.

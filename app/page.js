@@ -1,3 +1,4 @@
+import { requireAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
@@ -10,10 +11,15 @@ import SubmitButton from './submit-button';
 
 async function upload(formData) {
   'use server';
+  await requireAuth();
   const files = formData.getAll('pdf').filter((f) => f && f.size);
   if (!files.length) redirect('/?error=Choose a PDF first');
+  if (files.length > 5 || files.some((f) => f.size > 10 * 1024 * 1024 || !/\.pdf$/i.test(f.name))) redirect('/?error=Upload up to five PDFs, each no larger than 10 MB');
+  if (!listCatalog().length) redirect('/?error=Load the Avery catalog before comparing a quote');
+  const buffers = await Promise.all(files.map((f) => f.arrayBuffer().then((b) => Buffer.from(b))));
+  if (buffers.some((b) => !b.subarray(0, 1024).includes(Buffer.from('%PDF-')))) redirect('/?error=One of the selected files is not a PDF');
   let last;
-  for (const f of files) last = await createQuoteFromPdf(f.name, Buffer.from(await f.arrayBuffer()));
+  for (const [i, f] of files.entries()) last = await createQuoteFromPdf(f.name, buffers[i]);
   revalidatePath('/');
   redirect(files.length === 1 ? `/quotes/${last}` : '/');
 }
@@ -103,7 +109,7 @@ export default async function Home({ searchParams }) {
                     <td>{q.line_count}</td>
                     <td className="num">{c ? fmt(c.totals.savings) : '—'}</td>
                     <td>
-                      {q.status === 'error' ? <span className="pill low">Error</span> : q.status === 'done' ? <span className="pill high">Confirmed</span> : <span className="pill medium">To review</span>}
+                      {q.status === 'error' ? <span className="pill low">Error</span> : q.status === 'done' && q.summary_snapshot ? <span className="pill high">Confirmed</span> : <span className="pill medium">To review</span>}
                     </td>
                     <td className="small muted">{q.created_at?.slice(0, 16)}</td>
                   </tr>

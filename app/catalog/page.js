@@ -1,3 +1,4 @@
+import { requireAuth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { listCatalog, parseShopifyCsv, replaceCatalog, syncFromShopify } from '@/lib/catalog';
@@ -8,17 +9,22 @@ import Link from 'next/link';
 
 async function uploadCsv(formData) {
   'use server';
+  await requireAuth();
   const f = formData.get('csv');
   if (!f || !f.size) redirect('/catalog?error=Choose a CSV file first');
-  const items = parseShopifyCsv(await f.text());
+  let items;
+  try { items = parseShopifyCsv(await f.text()); }
+  catch (e) { redirect(`/catalog?error=${encodeURIComponent(e.message)}`); }
   if (!items.length) redirect('/catalog?error=No priced, active products found in that file. Is it a Shopify product export?');
-  replaceCatalog(items, 'csv');
+  try { replaceCatalog(items, 'csv'); }
+  catch (e) { redirect(`/catalog?error=${encodeURIComponent(e.message)}`); }
   revalidatePath('/catalog');
   redirect(`/catalog?loaded=${items.length}`);
 }
 
 async function sync() {
   'use server';
+  await requireAuth();
   let n;
   try {
     n = await syncFromShopify();
@@ -40,7 +46,7 @@ export default async function CatalogPage({ searchParams }) {
       <h1>Avery catalog</h1>
       <p className="muted">
         The products and prices the tool compares against. &ldquo;Price each&rdquo; is the pack price divided by the pieces in the pack (e.g. a $176 case of
-        10 = $17.60 each). Change this on the <Link href="/settings">Settings</Link> page.
+        10 = $17.60 each). Change this on the <Link href="/settings">Settings</Link> page. Full-pack mode combines pieces of the same SKU and rounds up to complete cases or boxes; per-piece mode is a comparison estimate.
       </p>
       {sp?.error && <p className="error">{sp.error}</p>}
       {sp?.loaded && <p className="ok">Loaded {sp.loaded} products.</p>}

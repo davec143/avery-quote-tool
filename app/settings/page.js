@@ -1,3 +1,4 @@
+import { requireAuth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { getSetting, setSetting, setBlob, deleteBlob, getBlob } from '@/lib/db';
@@ -13,6 +14,7 @@ const TEXT_KEYS = [
 
 async function save(formData) {
   'use server';
+  await requireAuth();
   const intent = String(formData.get('intent') || 'save');
   if (intent === 'remove_logo') {
     deleteBlob('logo');
@@ -32,7 +34,7 @@ async function save(formData) {
   if (shop) setSetting('shopify_token', shop);
   const logo = formData.get('logo');
   if (logo && logo.size) {
-    if (!/^image\//.test(logo.type)) redirect('/settings?error=Logo must be an image (PNG, JPG or SVG)');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(logo.type) || logo.size > 2 * 1024 * 1024) redirect('/settings?error=Use a PNG, JPG or WebP logo no larger than 2 MB');
     setBlob('logo', logo.type, Buffer.from(await logo.arrayBuffer()));
   }
   revalidatePath('/', 'layout');
@@ -114,8 +116,8 @@ export default async function SettingsPage({ searchParams }) {
           <label>
             Compare our price as
             <select name="price_basis" defaultValue={b.priceBasis}>
-              <option value="per_piece">Price per piece (pack price ÷ pieces in pack)</option>
-              <option value="pack">Full pack price (as listed in Shopify)</option>
+              <option value="per_piece">Per-piece comparison estimate (assumes loose pieces can be supplied)</option>
+              <option value="pack">Whole-pack purchase cost (round up pieces to cases / boxes)</option>
             </select>
           </label>
           <h3 style={{ marginTop: 20 }}>Shopify (Avery store)</h3>
@@ -135,7 +137,7 @@ export default async function SettingsPage({ searchParams }) {
             Logo
             <img src="/api/logo" alt="Current logo" style={{ height: 56, width: 'auto', alignSelf: 'start', margin: '6px 0' }} />
             <span className="small muted" style={{ fontWeight: 400 }}>{hasLogo ? 'Your uploaded logo.' : 'Built-in Avery LED logo. Upload a file to replace it.'}</span>
-            <input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" />
+            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" />
           </label>
           {hasLogo && <SubmitButton label="Go back to the built-in logo" className="" name="intent" value="remove_logo" />}
           <label style={{ marginTop: 12 }}>

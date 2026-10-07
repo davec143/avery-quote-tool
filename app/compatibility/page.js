@@ -1,3 +1,4 @@
+import { requireAuth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
@@ -7,32 +8,38 @@ import SubmitButton from '../submit-button';
 
 async function upload(formData) {
   'use server';
+  await requireAuth();
   const f = formData.get('csv');
   if (!f || !f.size) redirect('/compatibility?error=Choose a CSV file first');
   const rows = parseCompatCsv(await f.text());
   if (!rows.length) redirect('/compatibility?error=No rows found. Check the file has competitor_sku and avery_sku columns.');
-  addCompatRows(rows, String(formData.get('who') || 'upload'), { replace: formData.get('mode') === 'replace' });
+  try { addCompatRows(rows, String(formData.get('who') || 'upload'), { replace: formData.get('mode') === 'replace' }); }
+  catch (e) { redirect(`/compatibility?error=${encodeURIComponent(e.message)}`); }
   revalidatePath('/compatibility');
   redirect(`/compatibility?added=${rows.length}`);
 }
 
 async function addOne(formData) {
   'use server';
+  await requireAuth();
   const row = {
     competitor_brand: String(formData.get('competitor_brand') || ''),
     competitor_sku: String(formData.get('competitor_sku') || '').trim(),
     competitor_description: String(formData.get('competitor_description') || ''),
     avery_sku: String(formData.get('avery_sku') || '').trim(),
     notes: String(formData.get('notes') || ''),
+    units_per_line_item: Number(formData.get('units_per_line_item') || 1),
   };
   if (!row.competitor_sku || !row.avery_sku) redirect('/compatibility?error=Competitor SKU and Avery SKU are both needed');
-  addCompatRows([row], 'manual');
+  try { addCompatRows([row], 'manual'); }
+  catch (e) { redirect(`/compatibility?error=${encodeURIComponent(e.message)}`); }
   revalidatePath('/compatibility');
   redirect('/compatibility?added=1');
 }
 
 async function remove(formData) {
   'use server';
+  await requireAuth();
   const id = formData.get('id');
   if (id === 'all') db().prepare('DELETE FROM compat_rows').run();
   else db().prepare('DELETE FROM compat_rows WHERE id = ?').run(Number(id));
@@ -109,6 +116,7 @@ export default async function CompatPage({ searchParams }) {
             Description / notes
             <input name="notes" />
           </label>
+          <label>Avery pieces per source unit<input name="units_per_line_item" type="number" min="0.0001" step="any" defaultValue={1} required /></label>
           <SubmitButton label="Add" />
         </form>
       </div>
@@ -155,7 +163,7 @@ export default async function CompatPage({ searchParams }) {
                     {cat[r.avery_sku] ? `${cat[r.avery_sku].title} — ${cat[r.avery_sku].variant}` : /^n\/?a$/i.test(r.avery_sku) ? 'Not carried' : 'Not in catalog'}
                   </div>
                 </td>
-                <td className="small">{r.notes}</td>
+                <td className="small">{r.notes}<div className="muted">{r.units_per_line_item} Avery pieces / source unit</div></td>
                 <td className="small muted">
                   {r.added_by}
                   <div>{r.created_at?.slice(0, 10)}</div>

@@ -143,6 +143,34 @@ test('AI connector rejection falls back to the correct connection type and still
     const negative=await matchLines([block]);assert.equal(negative.results[2].sku,null);assert.match(negative.results[2].reason,/Select corresponding Avery tape first/);
   } finally {globalThis.fetch=original;setSetting('llm_provider','none');}
 });
+test('AI N/A does not hide viable alternatives while narrow, high-output, wet and voltage conflicts stay excluded',async()=>{
+  replaceCatalog(catalog,'test');setSetting('llm_provider','custom');setSetting('llm_model','mock');setSetting('llm_base_url','https://mock.invalid');
+  const sources=[line(1,'24V tape light 3000K 100 lm/ft 8mm 10ft',5),line(2,'24V tape light 3000K 600 lm/ft 12mm 10ft',5),
+    line(3,'24V tape light 3000K 200 lm/ft 6mm 10ft'),line(4,'24V tape light 3000K 700 lm/ft 10mm 10ft'),
+    line(5,'24V 30W non-dimmable driver',10),line(6,'24V 120W non-dimmable driver',8),
+    line(7,'24V tape light 3000K 200 lm/ft 10mm 10ft IP65 wet location'),line(8,'12V 30W non-dimmable driver'),
+    line(9,'Surface U-channel aluminum 8ft',10),line(10,'8mm 2 pin terminal block strip to wire',10)];
+  const original=globalThis.fetch;
+  try {
+    globalThis.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({matches:sources.map((l)=>({id:l.id,sku:null,confidence:'low',reason:'AI declined.'}))})}}]}));
+    const {results}=await matchLines(sources);
+    for(const [id,sku] of [[1,'T200'],[2,'T500'],[3,null],[4,null],[5,'D60'],[6,'D100'],[7,null],[8,null],[9,'CHAN'],[10,'BLOCK']])assert.equal(results[id].sku,sku);
+    const rows=evaluateCrossovers(sources.map((l)=>({...l,our_sku:results[l.id].sku,include:!!results[l.id].sku})),cat);
+    assert.equal(rows[4].our_qty,5);assert.equal(rows[5].our_qty,10);assert.equal(rows[8].our_qty,25);
+    assert.match(rows[9].difference_notes,/not compatible with the original 8mm tape/);
+  } finally {globalThis.fetch=original;setSetting('llm_provider','none');}
+});
+test('AI cannot reverse the 60W/100W driver policy',async()=>{
+  replaceCatalog(catalog,'test');setSetting('llm_provider','custom');setSetting('llm_model','mock');setSetting('llm_base_url','https://mock.invalid');
+  const original=globalThis.fetch;
+  try {
+    globalThis.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({matches:[{id:1,sku:'D100',confidence:'high',reason:'Larger driver.'},{id:2,sku:'D60',confidence:'high',reason:'Multiple smaller drivers.'}]})}}]}));
+    const sources=[line(1,'24V 30W non-dimmable driver',10),line(2,'24V 120W non-dimmable driver',8)],{results}=await matchLines(sources);
+    assert.equal(results[1].sku,'D60');assert.equal(results[2].sku,'D100');
+    const rows=evaluateCrossovers(sources.map((l)=>({...l,our_sku:results[l.id].sku})),cat);
+    assert.equal(rows[0].our_qty,5);assert.equal(rows[1].our_qty,10);
+  } finally {globalThis.fetch=original;setSetting('llm_provider','none');}
+});
 test('8mm terminal blocks cross to 10mm only with corresponding included Avery tape',async()=>{
   const tape=line(1,'24V tape light 3000K 200 lm/ft 8mm 5ft');const block=line(2,'8mm terminal block 2 pin',3,'BLOCK');
   const rows=await proposed([tape,block]);assert.equal(rows[1].our_sku,'BLOCK');assert.match(rows[1].difference_notes,/Conditional.*not compatible with the original 8mm/);

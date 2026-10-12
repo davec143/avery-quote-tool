@@ -105,7 +105,7 @@ export default async function Home({ searchParams }) {
                       <div className="muted small">{q.customer || ''}</div>
                     </td>
                     <td>{q.line_count}</td>
-                    <td className="num">{c ? fmt(c.totals.savings) : '—'}</td>
+                    <td className="num">{c?.totals.savings == null ? '—' : fmt(c.totals.savings)}{c?.counts.unpricedIncluded > 0 && <div className="muted small">{c.counts.priced ? 'Priced lines only' : 'Avery pricing only'}</div>}</td>
                     <td>
                       {q.status === 'error' ? <span className="pill low">Error</span> : q.status === 'done' && q.summary_snapshot ? <span className="pill high">Confirmed</span> : <span className="pill medium">To review</span>}
                     </td>

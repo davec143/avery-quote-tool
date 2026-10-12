@@ -82,6 +82,9 @@ export default async function QuotePage({ params, searchParams }) {
   const charges=sourceCharges(q.source_charges), catalogMap=Object.fromEntries(catalog.map((i)=>[i.sku,i]));
   const reconciliation = reconcileTotal(q.raw_text, q.lines.map((l) => ({qty:l.qty,unit_price:l.comp_unit_price})),chargeTotal(charges));
   const history=quoteHistory(q.id);
+  const pricedCount=c.counts.priced ?? c.summaryRows.filter((r)=>r.theirTotal != null).length;
+  const hasSourcePrices=q.lines.some((l)=>l.comp_unit_price != null);
+  const missingSourcePrices=q.lines.some((l)=>l.comp_unit_price == null);
   const suggestions=Object.fromEntries(q.lines.map((l)=>[l.id,alternativeOptions(q,l,catalogMap,brand().priceBasis)]));
   const groups = Object.entries(
     catalog.reduce((acc, it) => ((acc[it.category] ||= []).push(it), acc), {})
@@ -125,16 +128,16 @@ export default async function QuotePage({ params, searchParams }) {
 
       <div className="stats">
         <div className="stat big">
-          <span className="muted small">Savings in summary</span>
-          <b>{fmt(c.totals.savings)}</b>
-          <span className="small muted">{c.totals.pct == null ? 'No percentage available' : `${(c.totals.pct * 100).toFixed(1)}% difference on compared lines`}</span>
+          <span className="muted small">{pricedCount ? 'Savings · priced source lines only' : 'Avery product estimate'}</span>
+          <b>{fmt(pricedCount ? c.totals.savings : c.totals.ours)}</b>
+          <span className="small muted">{!pricedCount ? 'Source prices not provided' : c.totals.pct == null ? 'No percentage available' : `${(c.totals.pct * 100).toFixed(1)}% difference on compared lines`}</span>
         </div>
         <div className="stat">
-          <span className="muted small">Their total (compared lines)</span>
+          <span className="muted small">Their total · priced lines only</span>
           <b>{fmt(c.totals.theirs)}</b>
         </div>
         <div className="stat">
-          <span className="muted small">Our total</span>
+          <span className="muted small">Avery total · all selected products</span>
           <b>{fmt(c.totals.ours)}</b>
         </div>
         <div className="stat">
@@ -148,8 +151,7 @@ export default async function QuotePage({ params, searchParams }) {
 
       {c.counts.noPrice > 0 && (
         <p className="banner">
-          {c.counts.noPrice} matched line{c.counts.noPrice > 1 ? 's have' : ' has'} no competitor price on the quote. Type their price in to include
-          {c.counts.noPrice > 1 ? ' them' : ' it'} in the summary.
+          {c.counts.noPrice} matched line(s) have no source price. Selected products can be included with Avery pricing only; these lines are excluded from savings. Leave absent prices blank.
         </p>
       )}
 
@@ -228,7 +230,7 @@ export default async function QuotePage({ params, searchParams }) {
                   )}
                 </td>
                 <td className="num">
-                  {r.state.startsWith('invalid') ? <span className="error small">Invalid quantity or price</span> : r.state === 'na' ? <span className="pill na">N/A</span> : r.state === 'no_price' ? <span className="muted small">needs their price</span> : (
+                  {r.state.startsWith('invalid') ? <span className="error small">Invalid quantity or price</span> : r.state === 'na' ? <span className="pill na">N/A</span> : r.state === 'no_price' ? <span className="muted small">Avery pricing only</span> : (
                     <span className={r.savings < 0 ? 'error' : 'ok'}>{fmt(r.savings)}</span>
                   )}
                 </td>
@@ -279,7 +281,7 @@ export default async function QuotePage({ params, searchParams }) {
         <label>Customer-facing installation assumptions<textarea name="installation_note" defaultValue={q.installation_note || ''} placeholder="Reviewed circuit distribution, feeds, controls and remaining conditions" /></label>
       </section>
       <p className="small muted">
-        Savings compare the same selected lines, including higher-cost substitutes. Avery quantities are pieces; whole-pack mode combines repeated SKUs and rounds up to full packs. Review units and roll lengths against the source PDF. N/A lines, lines with no competitor price and unticked lines stay out of the summary. Tick
+        Savings compare the same selected lines, including higher-cost substitutes. Avery quantities are pieces; whole-pack mode combines repeated SKUs and rounds up to full packs. Review units and roll lengths against the source PDF. Selected products without source prices show Avery costs only. Savings use only priced source lines and their allocated Avery costs. N/A and unticked lines stay out of the summary. Tick
         “Remember” to add a match to the compatibility list so it’s used automatically next time.
       </p>
 
@@ -294,11 +296,11 @@ export default async function QuotePage({ params, searchParams }) {
         </div>
         <label>Reviewer name<input name="reviewer_name" defaultValue={q.reviewer_name || ''} placeholder="Required at confirmation" /></label>
         <h3>Source charges and reconciliation</h3>
-        <p className="small muted">Printed source total: {fmt(printedTotal(q.raw_text))}. Source product subtotal: {fmt(q.lines.reduce((n,l)=>n+(l.comp_unit_price ?? 0)*l.qty,0))}. Recorded adjustments: {fmt(chargeTotal(charges))}. These charges are excluded from both compared product subtotals.</p>
+        <p className="small muted">Printed source total: {fmt(printedTotal(q.raw_text))}. {hasSourcePrices ? `Known source product amounts: ${fmt(q.lines.reduce((n,l)=>n+(l.comp_unit_price ?? 0)*l.qty,0))}.` : 'Source product prices not provided.'} Recorded adjustments: {fmt(chargeTotal(charges))}. These charges are excluded from product comparisons. {missingSourcePrices && 'Full source total reconciliation is unavailable because some source prices are missing; verify every source line and quantity.'}</p>
         <div className="grid2">{Object.entries(CHARGE_LABELS).map(([kind,label])=><label key={kind}>{label}{kind==='discount' ? ' (positive deduction)' : ''}<input name={`charge_${kind}`} type="number" min="0" step="0.01" defaultValue={Math.abs(charges.find((c)=>c.kind===kind)?.amount || 0) || ''} /></label>)}</div>
         <label>Other charge explanation<input name="charge_note" defaultValue={charges.find((c)=>c.kind==='other')?.note || ''} /></label>
-        <label className="row"><input type="checkbox" name="currency_confirmed" defaultChecked={!!q.currency_confirmed} /> I verified that the competitor prices are in USD.</label>
-        <label className="row"><input type="checkbox" name="quantities_verified" defaultChecked={!!q.quantities_verified} /> I verified every source line, unit price, length / unit of measure, and Avery purchase quantity against the source and product specifications.</label>
+        {hasSourcePrices && <label className="row"><input type="checkbox" name="currency_confirmed" defaultChecked={!!q.currency_confirmed} /> I verified that the supplied competitor prices are in USD.</label>}
+        <label className="row"><input type="checkbox" name="quantities_verified" defaultChecked={!!q.quantities_verified} /> I verified every source line, unit price where provided, length / unit of measure, and Avery purchase quantity against the source and product specifications.</label>
         <label>Source total reconciliation note<textarea name="reconciliation_note" defaultValue={q.reconciliation_note || ''} placeholder="If totals differ, explain the verified freight, tax, discount or scope difference. Correct missing lines before confirming." /></label>
         <p className="small muted">“Save” keeps a draft. “Confirm” validates and freezes the reviewed prices and customer document. Remembered mappings are saved only during confirmation.</p>
       </section>

@@ -84,7 +84,7 @@ test('a unit/extended price conflict keeps the line, blanks the price and warns'
   const { id, q } = await load('stress-price-conflict.pdf');
   assert.equal(q.status, 'review'); assert.equal(q.lines[0].comp_unit_price, null);
   assert.match(q.error, /does not equal the extended price/);
-  assert.throws(() => saveReview(id, formFor(id), true), /missing or invalid pricing|valid priced product|source total difference/);
+  assert.throws(() => saveReview(id, formFor(id), true), /conflicting source prices/);
 });
 
 test('freight/discount/tax lines explain a total mismatch; CAD cannot be confirmed as USD', async () => {

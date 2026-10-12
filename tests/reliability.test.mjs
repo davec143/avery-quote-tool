@@ -49,9 +49,9 @@ test('same SKU across source lines shares packs, and line allocation reconciles 
 test('per-piece mode is a different explicitly labelled estimate', () => {
   const c=calculateComparison({lines:[line()]},catalog,'per_piece'); assert.equal(c.totals.ours,50); assert.equal(c.priceBasis,'per_piece');
 });
-test('fractional, zero and non-finite quantities, and missing prices cannot enter totals', () => {
+test('fractional, zero and non-finite quantities and invalid prices cannot enter totals', () => {
   for (const qty of [0,-1,Infinity,NaN,0.5]) assert.equal(calculateComparison({lines:[line(1,qty)]},catalog,'pack').summaryRows.length,0);
-  for (const price of [null,NaN,Infinity,-1]) assert.equal(calculateComparison({lines:[line(1,5,price)]},catalog).summaryRows.length,0);
+  for (const price of [NaN,Infinity,-1]) assert.equal(calculateComparison({lines:[line(1,5,price)]},catalog).summaryRows.length,0);
   assert.equal(calculateComparison({lines:[line(1,5,0)]},catalog).totals.pct,null);
 });
 test('unknown case quantities are not guessed as individual pieces', () => {

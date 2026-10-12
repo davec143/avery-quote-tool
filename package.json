@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
     "test:samples": "node scripts/run-samples.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "benchmark": "node scripts/run-benchmark.mjs",
+    "backup": "node scripts/backup.mjs"
   },
   "engines": {
     "node": "22.x"

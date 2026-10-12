@@ -73,6 +73,10 @@ tr.excluded td { opacity: .6; }
 .reason { font-size: 12px; color: var(--muted); max-width: 300px; }
 .login { min-height: 70vh; display: grid; place-items: center; }
 .drop { border: 2px dashed #cfcbc1; border-radius: 12px; padding: 24px; text-align: center; background: #fff; }
+.drop.dragging { border-color:var(--accent); background:#fff4dc; }
+.upload-files { list-style:none; padding:0; text-align:left; }
+.upload-files li { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px; }
+.upload-files span { overflow-wrap:anywhere; }
 details summary { cursor: pointer; font-weight: 600; }
 @media print {
   .no-print { display: none !important; }
@@ -89,3 +93,12 @@ details summary { cursor: pointer; font-weight: 600; }
 .review select { max-width: 260px; }
 input[type=color] { height: 40px; padding: 4px; }
 main:has(.review) { max-width: 1560px; }
+.source-workspace {display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start;}
+.source-panel {position:sticky;top:16px;background:white;border:1px solid var(--line);border-radius:12px;padding:16px;max-height:calc(100vh - 32px);overflow:auto;}
+.source-panel .row {gap:6px;margin-bottom:12px;}.source-panel button{font-size:12px;padding:6px;}
+.source-text {font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#f7f6f2;padding:12px;}.source-text mark{background:#ffdb74;}
+.source-image {max-width:100%;height:auto;}.source-pdf{width:100%;height:520px;border:0;}
+.source-editor {min-width:0;}.candidate-options{font-size:12px;margin-top:10px;}.candidate{border:1px solid var(--line);padding:10px;margin-top:8px;border-radius:8px;}.candidate p{margin:6px 0;}
+.installation-group {border-top:1px solid var(--line);padding:12px 0;}.installation-group p{margin:4px 0;}.history-details{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:400px;overflow:auto;}
+.review input[name^=price_]:placeholder-shown {border-color:var(--warn);background:#fff4dc;}
+@media(max-width:1000px){.source-workspace{grid-template-columns:minmax(0,1fr);}.source-panel{position:static;max-height:none;}.grid2{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));}}

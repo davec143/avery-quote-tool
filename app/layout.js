@@ -22,6 +22,7 @@ export default function RootLayout({ children }) {
             <Link href="/compatibility">Compatibility list</Link>
             <Link href="/catalog">Catalog</Link>
             <Link href="/settings">Settings</Link>
+            <Link href="/insights">Team learning</Link>
           </nav>
         </header>
         {!process.env.APP_PASSWORD && (

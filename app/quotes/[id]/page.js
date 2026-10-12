@@ -4,12 +4,21 @@ import fs from 'node:fs';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { getQuote, computeQuote, rematch, runPipeline, fmt } from '@/lib/quotes';
+import { getQuote, computeQuote, rematch, reprocessQuote, fmt } from '@/lib/quotes';
 import { listCatalog, catalogBySku } from '@/lib/catalog';
 import { saveReview } from '@/lib/review';
 import SubmitButton from '../../submit-button';
+import QuantityInput from './quantity-input';
+import { MATCH_LABELS } from '@/lib/crossover';
+import { reconcileTotal, printedTotal } from '@/lib/extract';
+import { sourceCharges, chargeTotal, CHARGE_LABELS } from '@/lib/source-costs';
+import { alternativeOptions } from '@/lib/alternatives';
+import { quoteHistory, saveOutcome } from '@/lib/history';
+import { brand } from '@/lib/settings';
+import SourceReview from './source-review';
+import ProductChoice from './product-choice';
 
-const CAT_LABEL = { tape: 'Tape light', driver: 'Power supplies', connector: 'Connectors', other: 'Other' };
+const CAT_LABEL = { tape: 'Tape light', driver: 'Power supplies', channel: 'Aluminum channel', connector: 'Connectors', other: 'Other' };
 const SRC_LABEL = { compat: 'Compatibility list', ai: 'AI suggestion', rules: 'Built-in rules', manual: 'Set by hand' };
 
 async function save(formData) {
@@ -32,8 +41,7 @@ async function save(formData) {
     redirect('/');
   }
   if (intent === 'rerun') {
-    const q = d.prepare('SELECT raw_text FROM quotes WHERE id = ?').get(id);
-    try { await runPipeline(id, q.raw_text || ''); }
+    try { await reprocessQuote(id); }
     catch (e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
     revalidatePath(`/quotes/${id}`);
     redirect(`/quotes/${id}`);
@@ -56,6 +64,14 @@ async function save(formData) {
   redirect(intent === 'confirm' ? `/quotes/${id}/summary` : `/quotes/${id}?saved=1${learned ? `&learned=${learned}` : ''}`);
 }
 
+async function recordOutcome(form) {
+  'use server';
+  await requireAuth();
+  const id=Number(form.get('quote_id'));
+  try { saveOutcome(id,form); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
+  revalidatePath(`/quotes/${id}`);redirect(`/quotes/${id}?saved=1`);
+}
+
 export default async function QuotePage({ params, searchParams }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -63,12 +79,17 @@ export default async function QuotePage({ params, searchParams }) {
   if (!q) notFound();
   const c = computeQuote(q, { live: true });
   const catalog = listCatalog();
+  const charges=sourceCharges(q.source_charges), catalogMap=Object.fromEntries(catalog.map((i)=>[i.sku,i]));
+  const reconciliation = reconcileTotal(q.raw_text, q.lines.map((l) => ({qty:l.qty,unit_price:l.comp_unit_price})),chargeTotal(charges));
+  const history=quoteHistory(q.id);
+  const suggestions=Object.fromEntries(q.lines.map((l)=>[l.id,alternativeOptions(q,l,catalogMap,brand().priceBasis)]));
   const groups = Object.entries(
     catalog.reduce((acc, it) => ((acc[it.category] ||= []).push(it), acc), {})
   );
 
   return (
-    <form action={save}>
+    <>
+    <form action={save} key={q.revision}>
       <input type="hidden" name="quote_id" value={q.id} />
       <input type="hidden" name="revision" value={q.revision} />
       <div className="spread">
@@ -78,11 +99,11 @@ export default async function QuotePage({ params, searchParams }) {
           </p>
           <h1>{q.quote_number || q.filename}</h1>
           <p className="muted" style={{ margin: 0 }}>
-            {q.competitor || 'Competitor'} · {q.quote_date || 'no date'} · read by {q.extractor === 'ai' ? 'AI' : 'built-in reader'}, matched by{' '}
+            {q.competitor || 'Competitor'} · {q.quote_date || 'no date'} · read by {q.extractor === 'vision' ? 'AI image reader' : q.extractor === 'ai' ? 'AI' : 'built-in reader'}, matched by{' '}
             {q.matcher === 'ai' ? 'AI' : 'built-in rules'} ·{' '}
             {q.file_path && (
               <a href={`/api/quotes/${q.id}/pdf`} target="_blank">
-                original PDF
+                original {q.source_type?.startsWith('image/') ? 'image' : 'PDF'}
               </a>
             )}
           </p>
@@ -98,7 +119,8 @@ export default async function QuotePage({ params, searchParams }) {
 
       {sp?.error && <p className="error card" role="alert">{sp.error}</p>}
       {q.status === 'error' && <p className="error card">{q.error}</p>}
-      {q.status !== 'error' && q.error && <p className="banner">{q.error}</p>}
+      {q.status !== 'error' && q.error && !q.error.startsWith('The extracted lines total') && <p className="banner">{q.error}</p>}
+      {reconciliation && <p className="banner">{reconciliation}</p>}
       {sp?.saved && <p className="ok">Saved.{sp?.learned ? ` Added ${sp.learned} match(es) to the compatibility list.` : ''}</p>}
 
       <div className="stats">
@@ -143,6 +165,7 @@ export default async function QuotePage({ params, searchParams }) {
       </div>
 
       <p className="small muted">After changing a product or quantity, click Save to refresh costs and inclusion controls. Confirm only after checking the updated comparison.</p>
+      <SourceReview id={q.id} mime={q.source_type} hasFile={!!q.file_path} text={q.raw_text}>
       <div className="tablewrap">
         <table className="review">
           <thead>
@@ -168,8 +191,11 @@ export default async function QuotePage({ params, searchParams }) {
                   {r.group_label && <div className="muted">{r.group_label}</div>}
                 </td>
                 <td>
-                  <b className="small">{r.comp_sku}</b>
-                  <div className="line-desc">{r.comp_desc}</div>
+                  <label>Source SKU<input aria-label={`Source SKU for line ${r.line_ref}`} name={`source_sku_${r.id}`} defaultValue={r.comp_sku} /></label>
+                  <label>Source description<textarea aria-label={`Source description for line ${r.line_ref}`} name={`source_desc_${r.id}`} defaultValue={r.comp_desc} /></label>
+                  <label>Circuit / installation group<input aria-label={`Circuit group for line ${r.line_ref}`} name={`group_${r.id}`} defaultValue={r.group_label || ''} placeholder="Same group for products installed together" /></label>
+                  <button type="button" className="small" data-source-sku={r.comp_sku}>Find in source</button>
+                  <label className="row small"><input type="checkbox" name={`remove_${r.id}`} /> Remove duplicate / non-product source row on Save</label>
                 </td>
                 <td className="num">
                   <input aria-label={`Source quantity for line ${r.line_ref}`} name={`qty_${r.id}`} type="number" min="0.0001" step="any" required defaultValue={r.qty} style={{ width: 64 }} inputMode="decimal" />
@@ -186,22 +212,12 @@ export default async function QuotePage({ params, searchParams }) {
                   {r.theirTotal != null && <div className="small muted">{fmt(r.theirTotal)} total</div>}
                 </td>
                 <td style={{ minWidth: 240 }}>
-                  <select aria-label={`Avery product for line ${r.line_ref}`} name={`sku_${r.id}`} defaultValue={r.our_sku || 'NA'}>
-                    <option value="NA">N/A — we don&apos;t carry this</option>
-                    {groups.map(([cat, items]) => (
-                      <optgroup key={cat} label={CAT_LABEL[cat] || cat}>
-                        {items.map((it) => (
-                          <option key={it.sku} value={it.sku}>
-                            {it.title} — {it.variant} ({fmt(it.unit_price)} ea)
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                  <ProductChoice id={r.id} line={r.line_ref} selected={r.our_sku} groups={groups.map(([cat,items])=>[CAT_LABEL[cat] || cat,items.map(({sku,title,variant,unit_price})=>({sku,title,variant,unit_price}))])} options={suggestions[r.id]} />
                   {r.our && <div className="small muted">{r.our.sku}</div>}
                 </td>
                 <td className="num">
-                  <input aria-label={`Avery pieces for line ${r.line_ref}`} name={`oq_${r.id}`} type="number" min="1" step="1" required defaultValue={r.ourQty} style={{ width: 64 }} inputMode="decimal" />
+                  <QuantityInput id={r.id} line={r.line_ref} quantity={r.ourQty} mode={r.quantity_mode || 'auto'} />
+                  {r.qty_basis && <div className="reason">{r.qty_basis}</div>}
                 </td>
                 <td className="num">
                   {fmt(r.ourUnit)}
@@ -217,12 +233,15 @@ export default async function QuotePage({ params, searchParams }) {
                   )}
                 </td>
                 <td>
-                  <span className={`pill ${r.confirmed ? 'high' : r.confidence || 'na'}`}>{r.confirmed ? 'confirmed' : r.confidence || '—'}</span>{' '}
+                  <span className={`pill ${r.match_kind === 'exact' ? 'high' : r.match_kind === 'alternative' ? 'medium' : 'low'}`}>{MATCH_LABELS[r.match_kind] || 'Option requiring review'}</span>{' '}
                   <span className="pill src">{SRC_LABEL[r.match_source] || r.match_source}</span>
                   <div className="reason">{r.reason}</div>
+                  {r.difference_notes && <p className="reason"><b>Customer disclosure:</b> {r.difference_notes}</p>}
                   <label className="small">Customer-facing spec note
                     <textarea name={`note_${r.id}`} defaultValue={r.customer_note || ''} placeholder="Explain differences and what still needs verification" />
                   </label>
+                  <label className="small">Internal decision reason<input name={`decision_${r.id}`} defaultValue={r.decision_note || ''} placeholder="Why this option or correction?" /></label>
+                  {!!r.review_required && r.our && <label className="row small"><input type="checkbox" name={`accept_${r.id}`} defaultChecked={!!r.review_accepted} /> I reviewed this option&apos;s requirements and installation/quantity plan.</label>}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   <input type="checkbox" aria-label={`Include line ${r.line_ref} in comparison`} name={`inc_${r.id}`} defaultChecked={!!r.include} disabled={r.state === 'na'} />
@@ -235,6 +254,30 @@ export default async function QuotePage({ params, searchParams }) {
           </tbody>
         </table>
       </div>
+      </SourceReview>
+      <section className="card" style={{marginTop:16}}>
+        <h3>Add a missing source product</h3>
+        <p className="small muted">Add a product visible on the original quote. Then select a product or re-match unconfirmed lines. Add freight, tax and discounts below as source charges.</p>
+        <div className="grid2">
+          <label>Source line reference<input name="new_ref" placeholder="Printed line or page reference" /></label>
+          <label>Source SKU<input name="new_sku" /></label>
+          <label>Source description<textarea name="new_desc" /></label>
+          <label>Circuit / installation group<input name="new_group" /></label>
+          <label>Source quantity<input name="new_qty" type="number" min="0.0001" step="any" defaultValue="1" /></label>
+          <label>Source unit price<input name="new_price" inputMode="decimal" /></label>
+        </div>
+        <SubmitButton label="Add source line" name="intent" value="addline" pending="Adding…" />
+      </section>
+      <section className="card" style={{marginTop:16}}>
+        <h3>Installation requirements</h3>
+        <p className="small muted">Give products installed together the same circuit group. Calculations use required tape length, not purchased offcuts. Verify connected loads, distribution, feeds and controls.</p>
+        <div className="grid2">
+          <label>Driver calculation basis<select name="driver_basis" defaultValue={q.driver_basis || 'source'}><option value="source">Quoted driver capacity</option><option value="tape_load">Selected Avery tape load with reviewed headroom</option></select></label>
+          <label>Reviewed driver headroom (%)<input name="design_headroom" type="number" min="0" max="100" step="any" defaultValue={q.design_headroom ?? ''} placeholder="Unknown until reviewed" /></label>
+        </div>
+        {c.installation.groups.map((g)=><div className="installation-group" key={g.name}><b>{g.name}: {g.status}</b><div className="small">Known tape load: {g.knownLoadWatts.toFixed(2)}W{g.requiredWatts != null ? `; with headroom: ${g.requiredWatts.toFixed(2)}W` : ''}. Selected driver capacity: {g.capacityWatts}W.</div>{[...g.blockers,...g.incomplete,...g.conditions].map((note,i)=><p className={g.blockers.includes(note) ? 'error small' : 'small muted'} key={i}>{note}</p>)}</div>)}
+        <label>Customer-facing installation assumptions<textarea name="installation_note" defaultValue={q.installation_note || ''} placeholder="Reviewed circuit distribution, feeds, controls and remaining conditions" /></label>
+      </section>
       <p className="small muted">
         Savings compare the same selected lines, including higher-cost substitutes. Avery quantities are pieces; whole-pack mode combines repeated SKUs and rounds up to full packs. Review units and roll lengths against the source PDF. N/A lines, lines with no competitor price and unticked lines stay out of the summary. Tick
         “Remember” to add a match to the compatibility list so it’s used automatically next time.
@@ -249,8 +292,14 @@ export default async function QuotePage({ params, searchParams }) {
           <label>Comparison valid until<input type="date" name="valid_until" defaultValue={q.valid_until || ''} /></label>
           <label>Customer-facing project notes<textarea name="customer_notes" defaultValue={q.customer_notes || ''} /></label>
         </div>
+        <label>Reviewer name<input name="reviewer_name" defaultValue={q.reviewer_name || ''} placeholder="Required at confirmation" /></label>
+        <h3>Source charges and reconciliation</h3>
+        <p className="small muted">Printed source total: {fmt(printedTotal(q.raw_text))}. Source product subtotal: {fmt(q.lines.reduce((n,l)=>n+(l.comp_unit_price ?? 0)*l.qty,0))}. Recorded adjustments: {fmt(chargeTotal(charges))}. These charges are excluded from both compared product subtotals.</p>
+        <div className="grid2">{Object.entries(CHARGE_LABELS).map(([kind,label])=><label key={kind}>{label}{kind==='discount' ? ' (positive deduction)' : ''}<input name={`charge_${kind}`} type="number" min="0" step="0.01" defaultValue={Math.abs(charges.find((c)=>c.kind===kind)?.amount || 0) || ''} /></label>)}</div>
+        <label>Other charge explanation<input name="charge_note" defaultValue={charges.find((c)=>c.kind==='other')?.note || ''} /></label>
         <label className="row"><input type="checkbox" name="currency_confirmed" defaultChecked={!!q.currency_confirmed} /> I verified that the competitor prices are in USD.</label>
-        <label className="row"><input type="checkbox" name="quantities_verified" defaultChecked={!!q.quantities_verified} /> I verified every source line, unit price, roll length / unit of measure, and Avery piece quantity against the PDF and product specifications.</label>
+        <label className="row"><input type="checkbox" name="quantities_verified" defaultChecked={!!q.quantities_verified} /> I verified every source line, unit price, length / unit of measure, and Avery purchase quantity against the source and product specifications.</label>
+        <label>Source total reconciliation note<textarea name="reconciliation_note" defaultValue={q.reconciliation_note || ''} placeholder="If totals differ, explain the verified freight, tax, discount or scope difference. Correct missing lines before confirming." /></label>
         <p className="small muted">“Save” keeps a draft. “Confirm” validates and freezes the reviewed prices and customer document. Remembered mappings are saved only during confirmation.</p>
       </section>
 
@@ -263,9 +312,24 @@ export default async function QuotePage({ params, searchParams }) {
         <SubmitButton label="Save" className="" name="intent" value="save" />
         <SubmitButton label="Confirm & make summary" name="intent" value="confirm" pending="Saving…" />
         <SubmitButton label="Re-match unconfirmed lines" className="" name="intent" value="rematch" pending="Matching…" />
-        <SubmitButton label="Re-read the PDF from scratch" confirmMessage="Re-read this PDF and replace every saved match, price edit, and customer specification note?" className="" name="intent" value="rerun" pending="Reading…" />
-        <SubmitButton label="Delete quote" confirmMessage="Delete this quote and its uploaded PDF? This cannot be undone." className="danger" name="intent" value="delete" />
+        <SubmitButton label="Re-read the source from scratch" confirmMessage="Re-read this source and replace every saved match, price edit, and customer specification note?" className="" name="intent" value="rerun" pending="Reading…" />
+        <SubmitButton label="Delete quote" confirmMessage="Delete this quote and its uploaded source file? This cannot be undone." className="danger" name="intent" value="delete" />
       </div>
     </form>
+    <section className="card no-print" style={{marginTop:20}}>
+      <h3>Customer outcome</h3>
+      <form action={recordOutcome} key={`outcome-${q.revision}`}>
+        <input type="hidden" name="quote_id" value={q.id} /><input type="hidden" name="revision" value={q.revision} />
+        <div className="grid2"><label>Status<select name="outcome" defaultValue={q.outcome || 'open'}><option value="open">Open</option><option value="reviewing">Customer reviewing</option><option value="accepted">Customer accepted</option><option value="declined">Customer declined</option></select></label><label>Recorded by<input name="actor" defaultValue={q.reviewer_name || ''} required /></label></div>
+        <label>Feedback / reason<textarea name="outcome_note" defaultValue={q.outcome_note || ''} /></label>
+        <SubmitButton label="Record customer outcome" />
+        <p className="small muted">Records feedback internally. Reviewer names are self-reported under the shared team login.</p>
+      </form>
+    </section>
+    <section className="card no-print" style={{marginTop:20}}><h3>Review history</h3>
+      {!history.length && <p>No history recorded yet. Earlier activity was not logged.</p>}
+      {history.map((e)=><details key={e.id}><summary>{e.created_at} UTC · {e.actor} · {e.event_type} · revision {e.revision}</summary><pre className="history-details">{JSON.stringify(e.details,null,2)}</pre></details>)}
+    </section>
+    </>
   );
 }

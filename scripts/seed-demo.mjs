@@ -20,9 +20,9 @@ for (let i=0;i<2;i++) {
   insert.run(id,2,'3','DEMO-CONTROL','Wall control / dimmer',1,55,null,1,0,'high','',1);
   if (i===0) {
     const q=getQuote(id), f=new FormData();
-    for (const [k,v] of Object.entries({ revision:q.revision,customer:q.customer,job_name:q.job_name,currency_confirmed:'on',quantities_verified:'on',lead_time:'Sample only — request current stock and delivery date',payment_terms:'Sample only — confirm with Avery',valid_until:'2026-10-17',customer_notes:'DEMONSTRATION ONLY. Products, quantities, prices and terms shown here are illustrative.' })) f.set(k,String(v));
+    for (const [k,v] of Object.entries({ revision:q.revision,customer:q.customer,job_name:q.job_name,reviewer_name:'Test reviewer', currency_confirmed:'on',quantities_verified:'on',lead_time:'Sample only — request current stock and delivery date',payment_terms:'Sample only — confirm with Avery',valid_until:'2026-10-17',customer_notes:'DEMONSTRATION ONLY. Products, quantities, prices and terms shown here are illustrative.' })) f.set(k,String(v));
     for (const l of q.lines) {
-      f.set(`qty_${l.id}`,String(l.qty));f.set(`price_${l.id}`,String(l.comp_unit_price));f.set(`oq_${l.id}`,String(l.our_qty));f.set(`sku_${l.id}`,l.our_sku||'NA');f.set(`note_${l.id}`,l.customer_note);if(l.include)f.set(`inc_${l.id}`,'on');
+      f.set(`qty_${l.id}`,String(l.qty));f.set(`price_${l.id}`,String(l.comp_unit_price));f.set(`oq_${l.id}`,String(l.our_qty));f.set(`sku_${l.id}`,l.our_sku||'NA');f.set(`note_${l.id}`,l.customer_note);f.set(`accept_${l.id}`,'on');if(l.include)f.set(`inc_${l.id}`,'on');
     }
     saveReview(id,f,true);
   }

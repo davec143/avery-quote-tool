@@ -30,8 +30,8 @@ function quote() {
 }
 function form(id) {
   const q = getQuote(id), f = new FormData();
-  for (const [k,v] of Object.entries({ revision: q.revision, customer: q.customer, job_name: q.job_name || '', currency_confirmed: 'on', quantities_verified: 'on' })) f.set(k,String(v));
-  for (const l of q.lines) for (const [k,v] of Object.entries({ qty:l.qty, price:l.comp_unit_price ?? '', oq:l.our_qty ?? l.qty, sku:l.our_sku || 'NA', inc:'on', note:'Confirm 100–240V input and installation; non-dimmable supply for a non-dimmed circuit.' })) f.set(`${k}_${l.id}`,String(v));
+  for (const [k,v] of Object.entries({ revision: q.revision, customer: q.customer, job_name: q.job_name || '', reviewer_name:'Test reviewer', currency_confirmed: 'on', quantities_verified: 'on' })) f.set(k,String(v));
+  for (const l of q.lines) for (const [k,v] of Object.entries({ qty:l.qty, price:l.comp_unit_price ?? '', oq:l.our_qty ?? l.qty, sku:l.our_sku || 'NA', inc:'on', accept:'on', note:'Confirm 100–240V input and installation; non-dimmable supply for a non-dimmed circuit.' })) f.set(`${k}_${l.id}`,String(v));
   return f;
 }
 after(() => { db().close(); fs.rmSync(folder, { recursive: true, force: true }); });
@@ -62,13 +62,13 @@ test('nested connector packs count the actual total pieces', () => {
   const nested=toItem({handle:'c',title:'Connector',sku:'C',options:['10 Packs - 12 pcs per pack (120 pcs)'],price:60});
   assert.equal(nested.pack_qty,120);assert.equal(nested.unit_price,0.5);
 });
-test('all automatic sources reject voltage mismatch and undersized driver mappings', async () => {
+test('automatic sources reject voltage mismatch while larger drivers become capacity alternatives', async () => {
   replaceCatalog([item],'test');
   addCompatRows([{competitor_sku:'COMP-12V-96W',avery_sku:item.sku}]);
   const {results}=await matchLines([{...line(),comp_sku:'COMP-12V-96W',comp_desc:'12V 96W driver'}]);
   assert.equal(results[1].sku,null);assert.match(results[1].reason,/Voltage mismatch/);
   assert.ok(assessMatch({comp_sku:'DI-ODX-12V96W-J',comp_desc:'OMNIDRIVE X driver'},item).blockers.some((s)=>s.includes('Voltage mismatch')));
-  assert.equal(ruleMatch({...line(),comp_desc:'24V 200W driver'},[item]).sku,null);
+  assert.equal(ruleMatch({...line(),comp_desc:'24V 200W driver'},[item]).sku,item.sku);
 });
 test('wet strip and incompatible connector matches are blocked', () => {
   assert.ok(assessMatch({comp_desc:'24V 3000K wet-rated IP65 strip'}, {...item,category:'tape',title:'24V 3000K strip',ip_rating:'IP20',cct:'3000K'}).blockers.length);
@@ -99,9 +99,9 @@ test('changing reviewed quantities invalidates the summary and prevents stale wr
   const edit=form(id);edit.set(`qty_${lid}`,'6');saveReview(id,edit,false);
   const q=getQuote(id);assert.equal(q.summary_snapshot,null);assert.equal(q.status,'review');assert.equal(q.lines[0].confirmed,0);assert.equal(q.lines[0].our_qty,6);
 });
-test('confirmed remembered matches preserve quantity conversion', () => {
+test('remembered driver matches do not reuse job-specific quantity ratios', () => {
   const {id,lid}=quote(),f=form(id);f.set(`oq_${lid}`,'10');f.set(`learn_${lid}`,'on');saveReview(id,f,true);
-  assert.equal(lookupCompat('COMP-24V-96W',listCompat()).units_per_line_item,2);
+  assert.equal(lookupCompat('COMP-24V-96W',listCompat()).units_per_line_item,1);
 });
 test('empty and duplicate catalog replacements leave the previous catalog intact', () => {
   replaceCatalog([item],'test');assert.throws(()=>replaceCatalog([],'test'),/preserved/);assert.throws(()=>replaceCatalog([item,item],'test'),/Duplicate/);

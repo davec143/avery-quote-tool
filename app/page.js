@@ -2,24 +2,25 @@ import { requireAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { listQuotes, createQuoteFromPdf, getQuote, computeQuote, fmt } from '@/lib/quotes';
+import { listQuotes, createQuoteFromSource, getQuote, computeQuote, fmt } from '@/lib/quotes';
 import { listCatalog } from '@/lib/catalog';
 import { listCompat } from '@/lib/compat';
 import { llmConfig, PROVIDERS, brand } from '@/lib/settings';
 import { aiEnabled } from '@/lib/llm';
 import SubmitButton from './submit-button';
+import UploadInput from './upload-input';
+import { validateUploads, sourceMime } from '@/lib/uploads';
 
 async function upload(formData) {
   'use server';
   await requireAuth();
   const files = formData.getAll('pdf').filter((f) => f && f.size);
-  if (!files.length) redirect('/?error=Choose a PDF first');
-  if (files.length > 5 || files.some((f) => f.size > 10 * 1024 * 1024 || !/\.pdf$/i.test(f.name))) redirect('/?error=Upload up to five PDFs, each no larger than 10 MB');
+  try { validateUploads(files); } catch (e) { redirect(`/?error=${encodeURIComponent(e.message)}`); }
   if (!listCatalog().length) redirect('/?error=Load the Avery catalog before comparing a quote');
   const buffers = await Promise.all(files.map((f) => f.arrayBuffer().then((b) => Buffer.from(b))));
-  if (buffers.some((b) => !b.subarray(0, 1024).includes(Buffer.from('%PDF-')))) redirect('/?error=One of the selected files is not a PDF');
+  try { buffers.forEach((b,i) => sourceMime(files[i].name,b)); } catch (e) { redirect(`/?error=${encodeURIComponent(e.message)}`); }
   let last;
-  for (const [i, f] of files.entries()) last = await createQuoteFromPdf(f.name, buffers[i]);
+  for (const [i, f] of files.entries()) last = await createQuoteFromSource(f.name, buffers[i]);
   revalidatePath('/');
   redirect(files.length === 1 ? `/quotes/${last}` : '/');
 }
@@ -45,10 +46,7 @@ export default async function Home({ searchParams }) {
       <div className="grid2" style={{ marginTop: 16 }}>
         <form action={upload} className="card">
           <h3>New quote</h3>
-          <div className="drop">
-            <input type="file" name="pdf" accept="application/pdf,.pdf" multiple required />
-            <p className="muted small">PDF quotes. You can pick several at once.</p>
-          </div>
+          <UploadInput />
           {sp?.error && <p className="error">{sp.error}</p>}
           <div style={{ marginTop: 12 }}>
             <SubmitButton label="Compare quote" pending="Reading and matching…" />

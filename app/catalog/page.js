@@ -95,7 +95,8 @@ export default async function CatalogPage({ searchParams }) {
             {items.map((i) => (
               <tr key={i.sku}>
                 <td className="small">
-                  <b>{i.sku}</b>
+                  <Link href={`/catalog/${encodeURIComponent(i.sku)}`}><b>{i.sku}</b></Link>
+                  <div>{i.specification_stale ? 'Re-verification needed' : i.specification_date ? 'Verified fields' : 'Inferred fields'}</div>
                 </td>
                 <td>
                   {i.title}

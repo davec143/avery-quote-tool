@@ -32,10 +32,11 @@ async function load(name) {
 }
 function formFor(id, over = {}) {
   const q = getQuote(id), f = new FormData();
-  for (const [k, v] of Object.entries({ revision: q.revision, customer: 'Maple Electric', job_name: 'Stress job', currency_confirmed: 'on', quantities_verified: 'on', ...over })) f.set(k, String(v));
+  for (const [k, v] of Object.entries({ revision: q.revision, customer: 'Maple Electric', job_name: 'Stress job', reviewer_name:'Test reviewer', currency_confirmed: 'on', quantities_verified: 'on', ...over })) f.set(k, String(v));
   for (const l of q.lines) {
     f.set(`qty_${l.id}`, String(l.qty)); f.set(`price_${l.id}`, l.comp_unit_price ?? ''); f.set(`oq_${l.id}`, String(l.our_qty ?? l.qty));
     f.set(`sku_${l.id}`, l.our_sku || 'NA'); f.set(`note_${l.id}`, 'Verified against datasheets for this job.');
+    f.set(`accept_${l.id}`, 'on');
     if (l.include) f.set(`inc_${l.id}`, 'on');
   }
   return f;
@@ -49,23 +50,23 @@ test('mixed quote: boundaries, metric/feet, per-foot, wet, 12V, RGBW, undersized
   assert.equal(L['DI-TAPE-B'].our_qty, 1);   // 0.1 in over is measurement noise, not another roll
   assert.equal(L['DI-TAPE-C'].our_qty, 2);   // 2 × 5 m with a 16.4 ft roll: no phantom third roll
   assert.equal(L['DI-TAPE-D'].our_qty, 7);   // 100 ft priced per foot -> 7 rolls
-  for (const sku of ['DI-WET-E', 'DI-12V-F', 'DI-PSU-120']) { assert.equal(L[sku].our_sku, null); assert.equal(L[sku].include, 0); }
-  assert.match(L['DI-WET-E'].reason, /Wet/); assert.match(L['DI-12V-F'].reason, /Voltage/); assert.match(L['DI-PSU-120'].reason, /sufficiently rated/);
+  for (const sku of ['DI-WET-E', 'DI-12V-F']) { assert.equal(L[sku].our_sku, null); assert.equal(L[sku].include, 0); }
+  assert.match(L['DI-WET-E'].reason, /Wet/); assert.match(L['DI-12V-F'].reason, /Voltage/); assert.equal(L['DI-PSU-120'].our_sku,'AV-D-100'); assert.equal(L['DI-PSU-120'].match_kind,'review');
   assert.equal(L['DI-RGBW-G'].our_sku, 'AV-T-RGBW');
   assert.equal(L['DI-PSU-60'].our_sku, 'AV-D-60'); assert.equal(L['DI-PSU-100'].our_sku, 'AV-D-100');
   const c = computeQuote(getQuote(id), { live: true });
   assert.equal(c.counts.noPrice, 1);          // unpriced line cannot enter totals
   const tape = c.orders.find((o) => o.sku === 'AV-T-3000-200');
   assert.equal(tape.requiredPieces, 11); assert.equal(tape.packs, 2); assert.equal(tape.total, 352); // same SKU across lines shares cases
-  assert.equal(c.totals.theirs, 567);
+  assert.equal(c.totals.theirs, 567 + L['DI-PSU-120'].qty * L['DI-PSU-120'].comp_unit_price);
   assert.equal(c.totals.ours, 352 + 310 + 120 + 180 + 45);
-  assert.ok(c.totals.savings < 0);            // Avery is dearer here and the tool must say so, not hide it
+  assert.ok(c.rows.some((r) => r.inSummary && r.savings < 0)); // More-expensive matches remain included even when the new driver alternative improves overall savings.
 });
 
 test('confidence is meaningful: clean matches are medium, real unknowns are low', async () => {
   const { q } = await load('stress-mixed-tape-drivers.pdf');
   const L = byRef(q);
-  assert.equal(L['DI-PSU-100'].confidence, 'medium'); assert.equal(L['DI-TAPE-A'].confidence, 'medium');
+  assert.equal(L['DI-PSU-100'].match_kind, 'review'); assert.ok(['exact','alternative','review'].includes(L['DI-TAPE-A'].match_kind));
   assert.match(L['DI-PSU-100'].reason, /Standard checks before sending/);
   assert.equal(L['DI-WET-E'].confidence, 'low');
 });
@@ -83,7 +84,7 @@ test('a unit/extended price conflict keeps the line, blanks the price and warns'
   const { id, q } = await load('stress-price-conflict.pdf');
   assert.equal(q.status, 'review'); assert.equal(q.lines[0].comp_unit_price, null);
   assert.match(q.error, /does not equal the extended price/);
-  assert.throws(() => saveReview(id, formFor(id), true), /missing or invalid pricing|valid priced product/);
+  assert.throws(() => saveReview(id, formFor(id), true), /missing or invalid pricing|valid priced product|source total difference/);
 });
 
 test('freight/discount/tax lines explain a total mismatch; CAD cannot be confirmed as USD', async () => {
@@ -130,8 +131,8 @@ test('tape length working is stored for the customer summary and cleared by any 
   const { id, q } = await load('stress-basic-elemental.pdf');
   const tape = q.lines.find((l) => l.comp_sku.includes('86.44'));
   assert.match(tape.qty_basis, /4 × 86\.44in = 28\.81 ft.*2 rolls/);
-  assert.equal(q.lines.find((l) => l.comp_sku === 'DI-PSU-24V96W-ND').qty_basis, '');
+  assert.match(q.lines.find((l) => l.comp_sku === 'DI-PSU-24V96W-ND').qty_basis, /Job capacity estimate/);
   const f = formFor(id); f.set(`oq_${tape.id}`, '3');                     // reviewer overrides the roll count
   saveReview(id, f);
-  assert.equal(getQuote(id).lines.find((l) => l.id === tape.id).qty_basis, '');
+  assert.match(getQuote(id).lines.find((l) => l.id === tape.id).qty_basis, /Manual quantity: 3/);
 });

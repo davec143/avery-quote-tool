@@ -25,7 +25,7 @@ test('tape quantity comes from length and roll size, even when a saved mapping h
   await rematch(id, { all: true });
   const line = getQuote(id).lines[0];
   assert.equal(line.our_qty, 2);            // 4 × 86.44 in = 28.8 ft → 2 rolls, not 4 × 4
-  assert.match(line.reason, /Length check/);
+  assert.match(line.qty_basis, /Length check/);
   const c = computeQuote(getQuote(id), { live: true });
   assert.equal(c.orders[0].packs, 1);       // 2 rolls → one case of 10
   assert.equal(c.totals.ours, 200);
@@ -36,5 +36,5 @@ test('unreadable roll length keeps the line but flags it low confidence for manu
   await rematch(id, { all: true });
   const line = getQuote(id).lines[0];
   assert.equal(line.confidence, 'low');
-  assert.match(line.reason, /Quantity not converted from length/);
+  assert.match(line.difference_notes, /roll length.*not in the catalog/);
 });

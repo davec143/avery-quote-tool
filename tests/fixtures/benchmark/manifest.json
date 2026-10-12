@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic benchmark example. Replace with human-reviewed real cases before assessing real-world accuracy.",
+  "catalog": [
+    {"handle":"D60","sku":"D60","title":"24V 60W non-dimmable driver","price":60,"options":["Case (10 pcs)"],"specs":"IP20"},
+    {"handle":"T200","sku":"T200","title":"24V 3000K tape light 200 lm/ft","price":100,"options":["Case (10 pcs)"],"specs":"10mm IP20 Roll length 16.4ft; 3W/ft"}
+  ],
+  "cases": [{
+    "file":"source.txt",
+    "expected": {
+      "lines":[
+        {"line_ref":"1","sku":"SRC-D30","qty":10,"unit_price":20,"avery_sku":"D60","our_qty":5,"include":true},
+        {"line_ref":"2","sku":"SRC-T100","qty":3,"unit_price":25,"avery_sku":"T200","our_qty":3,"include":true}
+      ],
+      "totals":{"theirs":275,"ours":160,"savings":115}
+    }
+  }]
+}

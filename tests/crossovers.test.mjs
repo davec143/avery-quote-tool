@@ -124,6 +124,25 @@ test('imported terminal-block PCB width takes priority over housing size and pin
   assert.equal(results[2].sku,'ACTUAL-BLOCK');assert.match(results[2].reason,/Conditional on using the Avery 10mm tape.*not compatible with the original 8mm/);
   const isolated=await matchLines([sources[1]]);assert.equal(isolated.results[2].sku,null);
 });
+test('AI connector rejection falls back to the correct connection type and still enforces tape dependency',async()=>{
+  const description='Size; 13.3×11.5×6.4mm; '+('Imported catalog text; '.repeat(25))+'PCB Width; 10mm; IP20';
+  const wire=make('WIRE-BLOCK','Terminal Block: Strip to Wire',87.89,['10 Packs - 12 pcs per pack (120 pcs)'],description);
+  const strip=make('STRIP-BLOCK','Terminal Block: Strip to Strip',87.89,['10 Packs - 12 pcs per pack (120 pcs)'],description);
+  replaceCatalog([catalog[0],strip,wire],'test');setSetting('llm_provider','custom');setSetting('llm_model','mock');setSetting('llm_base_url','https://mock.invalid');
+  const original=globalThis.fetch;
+  try {
+    globalThis.fetch=async(_url,options)=>{
+      const prompt=JSON.parse(options.body).messages[1].content;
+      const sent=JSON.parse(prompt.split('AVERY CATALOG:\n')[1].split('\n\nCOMPETITOR LINES:')[0]);
+      assert.equal(sent.find((c)=>c.sku==='WIRE-BLOCK').product_specs.width_mm,10);
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({matches:[{id:1,sku:'T200',confidence:'medium',reason:'Tape alternative.'},{id:2,sku:null,confidence:'low',reason:'Wrong dimensions.'}]})}}]}));
+    };
+    const tape=line(1,'24V tape light 3000K 100 lm/ft 8mm 10ft'),block=line(2,'8mm 2 pin terminal block strip to wire',10);
+    const positive=await matchLines([tape,block]);assert.equal(positive.results[2].sku,'WIRE-BLOCK');
+    assert.match(positive.results[2].reason,/Conditional on using the Avery 10mm tape/);
+    const negative=await matchLines([block]);assert.equal(negative.results[2].sku,null);assert.match(negative.results[2].reason,/Select corresponding Avery tape first/);
+  } finally {globalThis.fetch=original;setSetting('llm_provider','none');}
+});
 test('8mm terminal blocks cross to 10mm only with corresponding included Avery tape',async()=>{
   const tape=line(1,'24V tape light 3000K 200 lm/ft 8mm 5ft');const block=line(2,'8mm terminal block 2 pin',3,'BLOCK');
   const rows=await proposed([tape,block]);assert.equal(rows[1].our_sku,'BLOCK');assert.match(rows[1].difference_notes,/Conditional.*not compatible with the original 8mm/);

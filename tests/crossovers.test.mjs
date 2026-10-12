@@ -15,6 +15,7 @@ const { calculateComparison } = await import('../lib/comparison.js');
 const { complete } = await import('../lib/llm.js');
 const { extractQuote } = await import('../lib/extract.js');
 const { sourceMime, validateUploads } = await import('../lib/uploads.js');
+const { productSpecs } = await import('../lib/product-specs.js');
 after(()=>{db().close();fs.rmSync(folder,{recursive:true,force:true});});
 const make=(sku,title,price,options,specs='')=>toItem({handle:sku,sku,title,price,options,specs,source:'test'});
 const catalog=[
@@ -101,6 +102,27 @@ test('output alternatives cover 100→200, 300→300 and 600→500; 700+ is excl
 test('output is normalized to the same length basis',async()=>{
   const r=(await proposed([line(1,'24V tape light 3000K 656.168 lm/m 10mm 5ft')]))[0];
   assert.equal(r.our_sku,'T200');assert.doesNotMatch(r.difference_notes,/Output:/);
+});
+test('AI cannot replace the 100-to-200 crossover with a legacy 100-lumen catalog SKU',async()=>{
+  const legacy=make('T100','24V tape light 3000K 100 lm/ft',90,['Case (10 pcs)'],'10mm IP20 Roll length: 16.4 ft');
+  replaceCatalog([...catalog,legacy],'test');setSetting('llm_provider','custom');setSetting('llm_model','mock');setSetting('llm_base_url','https://mock.invalid');
+  const original=globalThis.fetch;
+  try {
+    globalThis.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({matches:[{id:1,sku:'T100',confidence:'high',reason:'Exact output.'}]})}}]}));
+    const source=line(1,'24V tape light 3000K 100 lm/ft 8mm 10ft',5),{results}=await matchLines([source]);
+    assert.equal(results[1].sku,'T200');assert.match(results[1].reason,/100 lm\/ft higher/);
+  } finally {globalThis.fetch=original;setSetting('llm_provider','none');}
+});
+test('imported terminal-block PCB width takes priority over housing size and pin distance',async()=>{
+  const block=make('ACTUAL-BLOCK','Terminal Block: Strip to Wire',87.89,['10 Packs - 12 pcs per pack (120 pcs)'],
+    'Size; 13.3×11.5×6.4mm; Pin Quantity; 2; Pin Distance; 4.5 mm; IP20; PCB Width; 10mm; PCB Thickness; 0.25 ~0.35 mm');
+  assert.equal(productSpecs(block).width_mm,10);
+  assert.equal(productSpecs({...block,specification_values:{width_mm:null}}).width_mm,null);
+  replaceCatalog([catalog[0],block],'test');
+  const sources=[line(1,'24V tape light 3000K 100 lm/ft 8mm 10ft'),line(2,'8mm 2 pin terminal block strip to wire',10)];
+  const {results}=await matchLines(sources);
+  assert.equal(results[2].sku,'ACTUAL-BLOCK');assert.match(results[2].reason,/Conditional on using the Avery 10mm tape.*not compatible with the original 8mm/);
+  const isolated=await matchLines([sources[1]]);assert.equal(isolated.results[2].sku,null);
 });
 test('8mm terminal blocks cross to 10mm only with corresponding included Avery tape',async()=>{
   const tape=line(1,'24V tape light 3000K 200 lm/ft 8mm 5ft');const block=line(2,'8mm terminal block 2 pin',3,'BLOCK');

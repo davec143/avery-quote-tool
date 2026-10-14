@@ -4,7 +4,7 @@ const order=(sku='D60',over={})=>({sku,requiredPieces:5,packQty:10,packs:1,order
 const product=(sku='D60',over={})=>({title:'Non-dimmable Power Supply',variants:[{sku,id:12345,available:true,price:'110.00',option1:'Case (10 pcs)',...over}]});
 test('one cart contains all grouped products in sellable packs using current store prices',()=>{
  const result=buildPurchaseCart([order(),order('T200',{requiredPieces:25,packs:3,orderPieces:30})],[product(),product('T200',{id:67890,price:'150.00'})]);
- assert.equal(result.url,'https://averyled.com/cart/12345:1,67890:3?storefront=true');assert.equal(result.total,560);assert.equal(result.items[0].quantity,1);
+ assert.equal(result.url,'https://averyled.com/cart/12345:1,67890:3?storefront=true&country=US');assert.equal(result.total,560);assert.equal(result.items[0].quantity,1);
 });
 test('missing, duplicate, unavailable and zero-price variants block the whole cart',()=>{
  for(const products of [[],[product(),product()],[product('D60',{available:false})],[product('D60',{price:'0.00'})],[product('D60',{id:'bad'})]]) assert.equal(buildPurchaseCart([order()],products).url,null);
@@ -28,5 +28,5 @@ test('store outages and incomplete pagination fail closed without breaking the s
  const doc={ready:true,quote:{},comparison:{orders:[order()]}};
  assert.equal((await loadPurchaseCart(doc,{fetcher:async()=>{throw new Error('offline');}})).url,null);
  assert.equal((await loadPurchaseCart(doc,{fetcher:async()=>new Response(JSON.stringify({products:Array(250).fill(product())}))})).url,null);
- const result=await loadPurchaseCart(doc,{fetcher:async(url,options)=>{assert.equal(options.cache,'no-store');return new Response(JSON.stringify({products:[product()]}));}});assert.equal(result.total,110);
+ const result=await loadPurchaseCart(doc,{fetcher:async(url,options)=>{assert.equal(options.cache,'no-store');assert.equal(new URL(url).searchParams.get('country'),'US');return new Response(JSON.stringify({products:[product()]}));}});assert.equal(result.total,110);
 });

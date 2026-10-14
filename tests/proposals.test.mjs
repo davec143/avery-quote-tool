@@ -78,3 +78,10 @@ test('storefront SKU matching groups repeated products and gracefully discloses 
  const docs=await loadSpecSheets(['D60','D60-BOX','UNKNOWN'],{fetcher});assert.equal(calls.length,2);assert.equal(docs.D60.sheets.length,1);assert.equal(docs['D60-BOX'].sheets.length,1);assert.deepEqual(docs.UNKNOWN,{sheets:[],productUrl:null});
  const failed=await loadSpecSheets(['D60'],{fetcher:async()=>{throw new Error('Offline');}});assert.equal(failed.D60.sheets.length,0);
 });
+
+test('purchase export distinguishes a loose-piece estimate from the full-pack amount',()=>{
+ const comparison=calculateComparison({lines:[line(1,3,null)]},cat,'per_piece');
+ const csv=purchaseCsv({ready:true,quote:{id:99},comparison});
+ assert.match(csv,/"Product cost USD","Full-pack cost USD","Pricing basis"/);
+ assert.match(csv,/"30","100","Per-piece estimate"/);
+});

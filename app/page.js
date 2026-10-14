@@ -2,13 +2,15 @@ import { requireAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { listQuotes, createQuoteFromSource, getQuote, computeQuote, fmt } from '@/lib/quotes';
+import { createQuoteFromSource, getQuote, computeQuote, fmt } from '@/lib/quotes';
 import { listCatalog } from '@/lib/catalog';
 import { listCompat } from '@/lib/compat';
 import { llmConfig, PROVIDERS, brand } from '@/lib/settings';
 import { aiEnabled } from '@/lib/llm';
 import SubmitButton from './submit-button';
 import UploadInput from './upload-input';
+import { searchQuotes } from '@/lib/quote-search';
+import { todayEastern } from '@/lib/readiness';
 import { validateUploads, sourceMime } from '@/lib/uploads';
 
 async function upload(formData) {
@@ -27,7 +29,10 @@ async function upload(formData) {
 
 export default async function Home({ searchParams }) {
   const sp = await searchParams;
-  const quotes = listQuotes();
+  const results=searchQuotes({query:sp?.q,status:sp?.status,outcome:sp?.outcome,page:sp?.page});
+  const {quotes}=results;
+  const pageLink=(page)=>'/?'+new URLSearchParams({q:results.query,status:results.status,outcome:results.outcome,page:String(page)});
+  const today=todayEastern();
   const catalogCount = listCatalog().length;
   const compatCount = listCompat().length;
   const cfg = llmConfig();
@@ -72,9 +77,16 @@ export default async function Home({ searchParams }) {
         </div>
       </div>
 
-      <h2>Recent quotes</h2>
+      <h2>Find a quote</h2>
+      <form action="/" method="get" className="quote-search card">
+        <label>Search<input type="search" name="q" defaultValue={results.query} placeholder="Customer, project, quote or SKU" /></label>
+        <label>Review status<select name="status" defaultValue={results.status}><option value="">All statuses</option><option value="review">To review</option><option value="done">Confirmed</option><option value="expired">Expired confirmed quotes</option><option value="error">Error</option><option value="processing">Processing</option></select></label>
+        <label>Customer outcome<select name="outcome" defaultValue={results.outcome}><option value="">All outcomes</option><option value="open">Open</option><option value="reviewing">Customer reviewing</option><option value="accepted">Customer accepted</option><option value="declined">Customer declined</option></select></label>
+        <button type="submit">Search quotes</button><Link href="/">Clear</Link>
+      </form>
+      <p className="small muted">{results.total} quote{results.total===1 ? '' : 's'} found · page {results.page} of {results.pages}</p>
       {quotes.length === 0 ? (
-        <p className="muted">No quotes yet.</p>
+        <p className="muted">No quotes match these filters. Clear the filters or upload a new quote.</p>
       ) : (
         <div className="tablewrap">
           <table>
@@ -85,7 +97,7 @@ export default async function Home({ searchParams }) {
                 <th>Job / customer</th>
                 <th>Lines</th>
                 <th className="num">Savings shown</th>
-                <th>Status</th>
+                <th>Status / outcome</th>
                 <th>Added</th>
               </tr>
             </thead>
@@ -107,7 +119,9 @@ export default async function Home({ searchParams }) {
                     <td>{q.line_count}</td>
                     <td className="num">{c?.totals.savings == null ? '—' : fmt(c.totals.savings)}{c?.counts.unpricedIncluded > 0 && <div className="muted small">{c.counts.priced ? 'Priced lines only' : 'Avery pricing only'}</div>}</td>
                     <td>
-                      {q.status === 'error' ? <span className="pill low">Error</span> : q.status === 'done' && q.summary_snapshot ? <span className="pill high">Confirmed</span> : <span className="pill medium">To review</span>}
+                      {q.status === 'error' ? <span className="pill low">Error</span> : q.status === 'done' && q.summary_snapshot ? <span className="pill high">Confirmed</span> : <span className="pill medium">{q.status==='processing' ? 'Processing' : 'To review'}</span>}
+                      <div className="small muted">{{open:'Open',reviewing:'Customer reviewing',accepted:'Customer accepted',declined:'Customer declined'}[q.outcome] || 'Open'}</div>
+                      {q.valid_until && <div className={q.valid_until<today ? 'small error' : 'small muted'}>{q.valid_until<today ? 'Expired' : 'Valid until'} {q.valid_until}</div>}
                     </td>
                     <td className="small muted">{q.created_at?.slice(0, 16)}</td>
                   </tr>
@@ -117,6 +131,7 @@ export default async function Home({ searchParams }) {
           </table>
         </div>
       )}
+      {results.pages>1 && <nav className="row" aria-label="Quote pages" style={{marginTop:16}}>{results.page>1 && <Link className="btn" href={pageLink(results.page-1)}>Previous</Link>}<span>Page {results.page} of {results.pages}</span>{results.page<results.pages && <Link className="btn" href={pageLink(results.page+1)}>Next</Link>}</nav>}
     </>
   );
 }

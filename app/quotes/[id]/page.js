@@ -17,6 +17,8 @@ import { quoteHistory, saveOutcome } from '@/lib/history';
 import { brand } from '@/lib/settings';
 import SourceReview from './source-review';
 import ProductChoice from './product-choice';
+import { reviewReadiness } from '@/lib/readiness';
+import { duplicateQuote } from '@/lib/quote-drafts';
 
 const CAT_LABEL = { tape: 'Tape light', driver: 'Power supplies', channel: 'Aluminum channel', connector: 'Connectors', other: 'Other' };
 const SRC_LABEL = { compat: 'Compatibility list', ai: 'AI suggestion', rules: 'Built-in rules', manual: 'Set by hand' };
@@ -64,6 +66,14 @@ async function save(formData) {
   redirect(intent === 'confirm' ? `/quotes/${id}/summary` : `/quotes/${id}?saved=1${learned ? `&learned=${learned}` : ''}`);
 }
 
+async function createDraft(form) {
+  'use server';
+  await requireAuth();
+  const id=Number(form.get('quote_id'));let newId;
+  try { newId=duplicateQuote(id,form.get('revision')); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
+  revalidatePath('/');redirect(`/quotes/${newId}?copied=${id}`);
+}
+
 async function recordOutcome(form) {
   'use server';
   await requireAuth();
@@ -86,6 +96,7 @@ export default async function QuotePage({ params, searchParams }) {
   const hasSourcePrices=q.lines.some((l)=>l.comp_unit_price != null);
   const missingSourcePrices=q.lines.some((l)=>l.comp_unit_price == null);
   const suggestions=Object.fromEntries(q.lines.map((l)=>[l.id,alternativeOptions(q,l,catalogMap,brand().priceBasis)]));
+  const readiness=reviewReadiness(q,catalogMap,brand().priceBasis);
   const groups = Object.entries(
     catalog.reduce((acc, it) => ((acc[it.category] ||= []).push(it), acc), {})
   );
@@ -126,6 +137,13 @@ export default async function QuotePage({ params, searchParams }) {
       {reconciliation && <p className="banner">{reconciliation}</p>}
       {sp?.saved && <p className="ok">Saved.{sp?.learned ? ` Added ${sp.learned} match(es) to the compatibility list.` : ''}</p>}
 
+      {sp?.copied && <p className="banner">New draft copied from <Link href={`/quotes/${Number(sp.copied)}`}>quote #{Number(sp.copied)}</Link>. Current catalog prices and calculated quantities apply. Approvals, expiry and customer outcome have been reset. Review retained terms and assumptions before confirming.</p>}
+      <section className="card readiness no-print" aria-label="Confirmation checklist">
+        <h3>{readiness.length ? `${readiness.length} item${readiness.length===1 ? '' : 's'} to resolve before confirmation` : 'Saved draft checks passed'}</h3>
+        <p className="small muted">Checks use saved values and the current catalog. Save your edits to refresh this list. Final confirmation validates the submitted form again.</p>
+        {readiness.length ? <ul>{readiness.map((issue,i)=><li key={i}><a href={`#${issue.target}`}>{issue.message}</a></li>)}</ul> : <p className="ok">Ready for a final review and confirmation.</p>}
+        {q.summary_snapshot && <p className="small muted">Your confirmed customer summary remains frozen. Create a new draft below to prepare a revision while keeping that summary.</p>}
+      </section>
       <div className="stats">
         <div className="stat big">
           <span className="muted small">{pricedCount ? 'Savings · priced source lines only' : 'Avery product estimate'}</span>
@@ -156,7 +174,7 @@ export default async function QuotePage({ params, searchParams }) {
       )}
 
       <div className="grid2" style={{ marginBottom: 16 }}>
-        <label>
+        <label id="customer-details">
           Customer (shown on summary)
           <input name="customer" defaultValue={q.customer || ''} />
         </label>
@@ -167,7 +185,7 @@ export default async function QuotePage({ params, searchParams }) {
       </div>
 
       <p className="small muted">After changing a product or quantity, click Save to refresh costs and inclusion controls. Confirm only after checking the updated comparison.</p>
-      <SourceReview id={q.id} mime={q.source_type} hasFile={!!q.file_path} text={q.raw_text}>
+      <div id="source-review" /><SourceReview id={q.id} mime={q.source_type} hasFile={!!q.file_path} text={q.raw_text}>
       <div className="tablewrap">
         <table className="review">
           <thead>
@@ -187,7 +205,7 @@ export default async function QuotePage({ params, searchParams }) {
           </thead>
           <tbody>
             {c.rows.map((r) => (
-              <tr key={r.id} className={r.state === 'na' ? 'na' : r.inSummary ? '' : 'excluded'}>
+              <tr id={`line-${r.id}`} key={r.id} className={r.state === 'na' ? 'na' : r.inSummary ? '' : 'excluded'}>
                 <td className="small">
                   {r.line_ref}
                   {r.group_label && <div className="muted">{r.group_label}</div>}
@@ -271,7 +289,7 @@ export default async function QuotePage({ params, searchParams }) {
         <SubmitButton label="Add source line" name="intent" value="addline" pending="Adding…" />
       </section>
       <section className="card" style={{marginTop:16}}>
-        <h3>Installation requirements</h3>
+        <h3 id="installation">Installation requirements</h3>
         <p className="small muted">Give products installed together the same circuit group. Calculations use required tape length, not purchased offcuts. Verify connected loads, distribution, feeds and controls.</p>
         <div className="grid2">
           <label>Driver calculation basis<select name="driver_basis" defaultValue={q.driver_basis || 'source'}><option value="source">Quoted driver capacity</option><option value="tape_load">Selected Avery tape load with reviewed headroom</option></select></label>
@@ -286,7 +304,7 @@ export default async function QuotePage({ params, searchParams }) {
       </p>
 
       <section className="card" style={{ marginTop: 20 }}>
-        <h3>Customer information and review</h3>
+        <h3 id="customer-review">Customer information and review</h3>
         <p className="small muted">This is a product comparison. Enter the terms you can substantiate; blank terms are shown as “To be confirmed.”</p>
         <div className="grid2">
           <label>Lead time / availability<input name="lead_time" defaultValue={q.lead_time || ''} placeholder="Confirm stock and delivery with Avery" /></label>
@@ -318,6 +336,14 @@ export default async function QuotePage({ params, searchParams }) {
         <SubmitButton label="Delete quote" confirmMessage="Delete this quote and its uploaded source file? This cannot be undone." className="danger" name="intent" value="delete" />
       </div>
     </form>
+    <section className="card no-print" style={{marginTop:20}}>
+      <h3>Create a revision</h3>
+      <p className="small muted">Copy saved source lines and selections into an independent draft using current catalog prices. The original quote and its confirmed summary stay intact. Save any edits you want to carry over first.</p>
+      <form action={createDraft}>
+        <input type="hidden" name="quote_id" value={q.id} /><input type="hidden" name="revision" value={q.revision} />
+        <SubmitButton label="Create new draft from this quote" pending="Copying…" />
+      </form>
+    </section>
     <section className="card no-print" style={{marginTop:20}}>
       <h3>Customer outcome</h3>
       <form action={recordOutcome} key={`outcome-${q.revision}`}>

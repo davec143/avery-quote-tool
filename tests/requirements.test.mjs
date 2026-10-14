@@ -59,3 +59,18 @@ test('password comparison and login throttle', () => {
   assert.equal(loginBlocked('ip', t + 16 * 60 * 1000), false);
   recordLoginFailure('other', t); clearLoginFailures('other'); assert.equal(loginBlocked('other', t), false);
 });
+
+test('length parsing separates source sections, stated totals and output per length',async()=>{
+  const {sourceLength,channelSections}=await import('../lib/requirements.js');
+  assert.equal(parseSourceLength('8ft tape, 200 lumens per foot, 3 watts per foot').feet,8);
+  near(parseSourceLength('5m (16.4ft) tape, maximum run 32ft, cut increment 2in').feet,16.4042);
+  const line={qty:10,comp_desc:'8ft recessed aluminum channel; total footage: 80ft'};
+  assert.equal(sourceLength(line).feet,8);assert.equal(sourceLength(line).totalFt,80);
+  assert.equal(channelSections(line,{sku:'C',specs:'Section length 1m'}).pieces,25);
+  assert.match(sourceLength({...line,qty:8}).problem,/does not agree/);
+  assert.match(sourceLength({...line,comp_desc:'Total 80ft; total 90ft'}).problem,/conflicting/);
+  const total=sourceLength({qty:10,comp_desc:'Total length: 1,200ft'});assert.equal(total.totalFt,1200);assert.equal(total.totalOnly,true);
+  assert.equal(tapeRolls({qty:10,comp_desc:'Total length: 80ft'},{sku:'T',specs:'Roll length 16.4ft'}).rolls,5);
+  assert.equal(tapeRolls({qty:10,comp_desc:'Total length: 80ft'},{sku:'T',specs:'Roll length 16.4ft'}).review,true);
+  assert.equal(parseRollLength({specs:'Reel length 1,000ft'}),1000);
+});

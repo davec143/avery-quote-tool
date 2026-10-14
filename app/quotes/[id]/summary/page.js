@@ -6,6 +6,7 @@ import { MATCH_LABELS } from '@/lib/crossover';
 import { briefConditions } from '@/lib/proposal';
 import { sourceCharges, CHARGE_LABELS } from '@/lib/source-costs';
 import { loadSpecSheets } from '@/lib/spec-sheets';
+import { loadPurchaseCart } from '@/lib/purchase-cart';
 
 const exclusion = (r) => r.state === 'na' ? (r.reason || 'No compatible Avery product selected') : r.state === 'invalid_source_price' ? 'Conflicting or invalid source price needs correction' : r.state.startsWith('invalid') ? 'Quantity or catalog price needs correction' : 'Excluded during review';
 const date = (value) => value ? new Date(value.length === 10 ? `${value}T12:00:00Z` : value).toLocaleDateString('en-US', { timeZone: value.length === 10 ? 'UTC' : 'America/New_York', year: 'numeric', month: 'long', day: 'numeric' }) : 'To be confirmed';
@@ -36,7 +37,7 @@ export default async function SummaryPage({ params }) {
   const hasComparison=pricedCount>0;
   const unpricedCount=c.summaryRows.length-pricedCount;
   const comparedOurs=c.totals.comparedOurs ?? c.totals.ours;
-  const documents=await loadSpecSheets(c.orders.map((o)=>o.sku));
+  const [documents,purchase]=await Promise.all([loadSpecSheets(c.orders.map((o)=>o.sku)),loadPurchaseCart({quote:q,comparison:c,ready})]);
   const pricingScope=hasComparison
     ? `Price comparison covers ${pricedCount} selected line(s) with source prices${unpricedCount ? `; ${unpricedCount} selected line(s) have no source price and are excluded from savings` : ''}. Avery product subtotal includes all selected products.`
     : 'Source prices were not provided for the selected products. Only Avery pricing is shown; no price comparison is available.';
@@ -58,6 +59,7 @@ export default async function SummaryPage({ params }) {
     hasComparison ? `Priced source lines: competitor subtotal ${fmt(c.totals.theirs)}; allocated Avery cost ${fmt(comparedOurs)}. ${higher ? 'Additional cost' : 'Estimated savings'}: ${fmt(Math.abs(c.totals.savings))}${percent ? ` (${percent})` : ''}.` : '',
     'Avery purchase quantities:',
     ...c.orders.map((o) => `${o.sku}: ${o.requiredPieces} pieces required; ${o.packs} × ${o.packLabel} of ${o.packQty} (${o.orderPieces} pieces, ${o.extraPieces} extra); ${fmt(o.total)}${c.priceBasis === 'pack' ? '' : ` per-piece estimate; ${fmt(o.packs*o.packPrice)} if buying full packs`}.${documents[o.sku]?.sheets.map((sheet)=>` Spec sheet: ${sheet.url}`).join('') || ' Spec sheet unavailable.'}`),
+    purchase.url ? `Buy now — all recommended products: ${purchase.url}\nCurrent store product total: ${fmt(purchase.total)} for whole packs. Shopify confirms final prices, availability, shipping and taxes.` : '',
     estimateDisclaimer,
     ...excluded.map((r) => `Not compared: ${r.comp_sku} × ${r.qty} — ${exclusion(r)}${r.theirTotal != null ? `; source amount ${fmt(r.theirTotal)}` : ''}.`),
     `Reviewed: ${ready ? date(q.reviewed_at) : 'Pending'}. Valid until: ${date(q.valid_until)}${expired ? ' — EXPIRED, REQUEST UPDATED PRICING' : ''}.`,
@@ -92,6 +94,14 @@ export default async function SummaryPage({ params }) {
           <div className="sum-split">{hasComparison && <><div><span>Competitor subtotal · priced lines</span><b>{fmt(c.totals.theirs)}</b></div><div><span>Avery cost · same priced lines</span><b>{fmt(comparedOurs)}</b></div></>}<div><span>{b.companyName} subtotal · all selected products</span><b>{fmt(c.totals.ours)}</b></div></div>
         </section>
         <section className="sum-scope"><b>{c.counts.compared} of {c.counts.total} product lines selected · All prices USD</b><p>{pricingScope}</p><p>This proposal covers the selected products below. {excluded.length} source line(s) are excluded and listed separately. Tax, freight, installation, controls, and unlisted accessories are excluded. Final order pricing and system suitability require confirmation.</p><p>{c.priceBasis === 'pack' ? 'Avery cost includes full cases, boxes or bundles, rounded up after combining repeated SKUs. Line costs allocate shared pack costs proportionally.' : 'Avery cost is a per-piece estimate. It assumes loose pieces can be supplied; case, box or bundle ordering may cost more. Confirm supply terms before ordering.'}</p></section>
+        <section className="buy-all" aria-label="Buy recommended products">
+          {purchase.url ? <>
+            <a className="btn primary buy-now" href={purchase.url} target="_blank" rel="noopener noreferrer">Buy now</a>
+            <div><b>All {purchase.items.length} recommended product{purchase.items.length===1 ? '' : 's'} · {fmt(purchase.total)} store product total</b>
+              <p>Opens your Avery Shopify cart with the full cases, boxes or packs shown below. Uses current store prices, which may differ from this saved estimate. {c.priceBasis!=='pack' && 'This full-pack amount can differ from the per-piece estimate above. '}Final prices, availability, shipping and taxes are confirmed in Shopify.</p>
+            </div>
+          </> : <><button className="btn" type="button" disabled>Buy now</button><p>{purchase.message}</p></>}
+        </section>
         <h2>Recommended Avery purchase</h2>
         <div className="tablewrap"><table className="sum-table overview-table"><thead><tr><th>SKU / product</th><th className="num">Required</th><th>{c.priceBasis==='pack' ? 'Purchase quantities' : 'Full-pack option'}</th><th className="num">{c.priceBasis==='pack' ? 'Purchase cost' : 'Piece estimate'}</th></tr></thead><tbody>{c.orders.map((o)=><tr key={o.sku}><td><b>{o.sku}</b><div className="sum-desc">{o.title}</div>{documents[o.sku]?.sheets.length ? documents[o.sku].sheets.map((sheet)=><div className="sum-desc" key={sheet.url}><a href={sheet.url} target="_blank" rel="noopener noreferrer" aria-label={`Spec sheet for ${o.sku}: ${sheet.label}`}>Spec sheet{documents[o.sku].sheets.length>1 ? ` · ${sheet.label}` : ''} ↗</a></div>) : <div className="sum-desc">Spec sheet unavailable{documents[o.sku]?.productUrl && <> · <a href={documents[o.sku].productUrl} target="_blank" rel="noopener noreferrer">Product details ↗</a></>}</div>}</td><td className="num">{o.requiredPieces} {unitLabel({category:o.category},o.requiredPieces)}</td><td>{o.packs} × {o.packLabel}<div className="sum-desc">{o.orderPieces} supplied; {o.extraPieces} extra</div>{c.priceBasis!=='pack' && <div className="sum-desc"><b>{fmt(o.packs*o.packPrice)} for full packs</b></div>}</td><td className="num">{fmt(o.total)}</td></tr>)}</tbody></table></div>
         {highlights.length>0 && <section className="key-conditions"><h2>Key differences and conditions</h2><ul>{highlights.map(({row,note})=><li key={row.id}><b>{row.comp_sku} → {row.our_sku}:</b> {note}</li>)}</ul></section>}
@@ -123,6 +133,7 @@ export default async function SummaryPage({ params }) {
         .sum-hero {display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;background:var(--brand);color:#fff;border-radius:12px;padding:24px;margin:24px 0;border-left:8px solid var(--accent);}
         .sum-label {font-size:13px;text-transform:uppercase;letter-spacing:1px;}.sum-big {font-size:42px;font-weight:800;color:var(--gold-light);}.sum-split {display:flex;gap:24px;}.sum-split span {display:block;font-size:12px;}.sum-split b {font-size:22px;}
         .sum-scope {font-size:13px;background:#f7f6f1;padding:16px;border:1px solid var(--line);border-radius:8px;}.sum-scope p:last-child {margin-bottom:0;}
+        .buy-all{display:flex;align-items:center;gap:18px;border:1px solid var(--accent);border-radius:10px;padding:16px;margin:20px 0;break-inside:avoid;}.buy-all p{font-size:12px;margin:4px 0;}.buy-now{white-space:nowrap;}@media(max-width:600px){.buy-all{align-items:flex-start;flex-direction:column;}}
         .technical-appendix{margin-top:30px;border-top:2px solid var(--accent);padding-top:10px;}.key-conditions{font-size:12px;}.key-conditions ul{padding-left:18px;}.key-conditions li{margin:5px 0;}.overview-table{font-size:12px;}
         .summary h2 {font-size:18px;margin-top:26px;}.sum-table {font-size:13px;min-width:720px;}.comparison-table{table-layout:fixed;}.sum-table th {background:#f3f1ea;}.sum-table td:not(.num),.sum-table th{overflow-wrap:anywhere;}.sum-desc {font-size:12px;color:var(--muted);white-space:normal;}.sum-note {font-size:12px;margin:8px 0 0;}.sum-table tfoot td {border-top:2px solid var(--accent);}
         .sum-estimate {font-size:13px;background:#f7f6f1;border-left:3px solid var(--accent);padding:10px 12px;margin:12px 0;break-inside:avoid;}.sum-terms {display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:13px;}.preserve {white-space:pre-wrap;}.sum-foot {margin-top:24px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;}

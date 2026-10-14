@@ -6,11 +6,13 @@
 - Create an independent draft from a saved quote. Reuses source and selected products, recalculates automatic quantities using the current catalog, and uses current prices. Copies the uploaded source file so deleting one quote cannot break the other. Resets approvals, reviewer, expiry and customer outcome. Retains commercial terms and assumptions for explicit review. Records the source quote and revision in history; the original quote and frozen proposal remain intact.
 - Dashboard search across quote/customer/project/filename/competitor/source SKU/Avery SKU, review-status and customer-outcome filters, expiry visibility, and 25-row pagination. Search reaches all quotes instead of stopping at the latest 200.
 - Length parsing distinguishes section/run length from explicitly stated total footage, verifies quantity × length against that total, accepts equivalent metric/imperial representations and thousands separators, and ignores maximum-run/cut-increment dimensions. Lumens or watts “per foot” no longer imply a quantity sold by the foot. Total-only tape estimates require review and disclose missing cut/run information in the proposal and installation notes.
+- Pinned the transitive PostCSS dependency to 8.5.30, resolving the dependency audit findings without a major framework upgrade. The [upstream advisory](https://github.com/postcss/postcss/security/advisories/GHSA-fxqj-rqcc-2cmp) identifies the patched version boundary; the installed newer patch reports zero known vulnerabilities.
 - Unreadable uploads with null source text display their error and recovery checklist instead of failing to render.
 
 ## Verification
 
 - 104 automated tests passed on Node 22, including existing six synthetic PDF scenarios and new workflow regressions.
+- Dependency audit: zero known vulnerabilities after patch; all 104 tests repeated successfully.
 - Optimized Next production build passed without warnings; git diff whitespace check passed.
 - Local production-browser smoke test: PDF upload, driver pooling, unpriced proposal, checklist targets, blocked incomplete confirmation, successful reviewed confirmation, purchase CSV, live public spec-sheet PDF, draft copying, recalculation, original snapshot immutability, independent source-file deletion, filters and mobile layout.
 - Additional browser checks: unreadable-source page, pagination, total-footage disclosure.

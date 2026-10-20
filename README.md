@@ -13,6 +13,10 @@ A team-reviewed product comparison for Avery LED. Upload a competitor's text-bas
 7. Record source freight, tax, discounts and other explained charges separately. Resolve or explain any remaining difference between the product-plus-charge total and the printed source total. Complete the applicable USD, quantity and per-line review checks, then **Confirm & make summary**. Confirmation validates and freezes the displayed pricing, catalog descriptions, customer details and branding. Later catalog or settings changes do not change that document. Editing a confirmed comparison returns it to review.
 8. Export the reviewed document with **Print / save as PDF**, **Copy as text**, or **Download purchase CSV**. The proposal opens with Avery costs, available savings on priced source lines, purchase quantities and key conditions; detailed calculations appear in an appendix. Draft and expired summaries disable these buttons. Browser printing itself cannot be prevented; drafts carry a visible warning in the printed document.
 
+## Member portal
+
+Approved Avery partners can submit competitor quotes at **averyled.com/apps/quote**. Access is enforced by a Shopify App Proxy signature plus the customer's `approve` tag. Submissions appear under **Member submissions to review**. After confirmation, **Publish to member** shows the proposal with **Add all to cart** and **Buy now**. Setup, security model and launch checklist: [PORTAL_SETUP.md](PORTAL_SETUP.md).
+
 ## Flexible crossovers
 
 - **Channel:** match profile and total footage, calculate one-metre sections (or an explicit catalog section length), then round to whole bundles. Joined sections, fit and cutting waste are disclosed. Unknown profiles require review; conflicting profiles are rejected.

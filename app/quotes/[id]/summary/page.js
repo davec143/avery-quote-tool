@@ -7,6 +7,44 @@ import { briefConditions } from '@/lib/proposal';
 import { sourceCharges, CHARGE_LABELS } from '@/lib/source-costs';
 import { loadSpecSheets } from '@/lib/spec-sheets';
 import { loadPurchaseCart } from '@/lib/purchase-cart';
+import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+import { requireAuth } from '@/lib/auth';
+import { publishToMember, unpublishFromMember, memberState } from '@/lib/portal';
+
+async function memberPublication(formData) {
+  'use server';
+  await requireAuth();
+  const id = Number(formData.get('id'));
+  try {
+    if (formData.get('action') === 'unpublish') unpublishFromMember(id, formData.get('revision'), formData.get('actor'));
+    else publishToMember(id, formData.get('revision'), formData.get('actor'));
+  } catch (e) { redirect(`/quotes/${id}/summary?member_error=${encodeURIComponent(e.message)}`); }
+  revalidatePath(`/quotes/${id}/summary`);
+  redirect(`/quotes/${id}/summary?member_saved=1`);
+}
+
+function MemberPanel({ stored, ready, sp }) {
+  if (!stored.shopify_customer_id) return null;
+  const state = memberState(stored);
+  const who = [stored.portal_customer_name, stored.portal_company, stored.portal_customer_email].filter(Boolean).join(' · ') || `Shopify customer ${stored.shopify_customer_id}`;
+  return <section className="card no-print" style={{ marginBottom: 16 }} aria-label="Member portal">
+    <h3>Member portal</h3>
+    <p className="small">Submitted by <b>{who}</b>{stored.portal_project ? <> · Project: {stored.portal_project}</> : null}. Member sees: <b>{state.label}</b>.</p>
+    {stored.portal_note && <p className="small preserve">Member note: {stored.portal_note}</p>}
+    {sp?.member_error && <p className="error small" role="alert">{sp.member_error}</p>}
+    {sp?.member_saved && <p className="ok small" role="status">Member portal updated.</p>}
+    <form action={memberPublication} className="row">
+      <input type="hidden" name="id" value={stored.id} /><input type="hidden" name="revision" value={stored.revision} />
+      <label className="small">Your name <input name="actor" required defaultValue={stored.reviewer_name || ''} /></label>
+      {stored.portal_status === 'published'
+        ? <button type="submit" name="action" value="unpublish">Unpublish from member</button>
+        : <button type="submit" className="primary" name="action" value="publish" disabled={!ready}>Publish to member</button>}
+      {!ready && stored.portal_status !== 'published' && <span className="small muted">Confirm the comparison to publish it.</span>}
+      {stored.portal_status === 'published' && !ready && <span className="small muted">Hidden from the member until you confirm again; it then reappears automatically.</span>}
+    </form>
+  </section>;
+}
 
 const exclusion = (r) => r.state === 'na' ? (r.reason || 'No compatible Avery product selected') : r.state === 'invalid_source_price' ? 'Conflicting or invalid source price needs correction' : r.state.startsWith('invalid') ? 'Quantity or catalog price needs correction' : 'Excluded during review';
 const date = (value) => value ? new Date(value.length === 10 ? `${value}T12:00:00Z` : value).toLocaleDateString('en-US', { timeZone: value.length === 10 ? 'UTC' : 'America/New_York', year: 'numeric', month: 'long', day: 'numeric' }) : 'To be confirmed';
@@ -27,8 +65,9 @@ function costDetails(comparison, row) {
     : [purchase, `${order.orderPieces} pieces supplied${order.extraPieces ? ` (${order.extraPieces} extra)` : ''}`];
 }
 
-export default async function SummaryPage({ params }) {
+export default async function SummaryPage({ params, searchParams }) {
   const { id } = await params;
+  const sp = await searchParams;
   const stored = getQuote(Number(id));
   if (!stored) notFound();
   const { quote: q, comparison: c, branding: b, ready } = summaryDocument(stored);
@@ -81,6 +120,7 @@ export default async function SummaryPage({ params }) {
         {!ready && <span className="error small">Confirm the comparison before exporting.</span>}
         {expired && <span className="error small">Expired — request an updated comparison.</span>}
       </div>
+      <MemberPanel stored={stored} ready={ready} sp={sp} />
       <article className="summary">
         {!ready && <div className="sum-status">DRAFT · Not reviewed · Do not send to customer</div>}
         {expired && <div className="sum-status">EXPIRED · Request updated pricing</div>}

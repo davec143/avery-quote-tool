@@ -3,6 +3,8 @@ import { validSession } from './lib/session.js';
 
 export async function middleware(req) {
   const { pathname } = req.nextUrl;
+  // Member portal routes authenticate with Shopify proxy signatures and upload tokens instead of the team password.
+  if (pathname === '/portal' || pathname.startsWith('/portal/') || pathname === '/portal-upload') return NextResponse.next();
   if (pathname === '/login' || pathname.startsWith('/_next/') || ['/favicon.ico', '/avery-logo.png', '/avery-logo-light.png'].includes(pathname)) return NextResponse.next();
   const password = process.env.APP_PASSWORD;
   if (!password) {
@@ -17,4 +19,4 @@ export async function middleware(req) {
   url.searchParams.set('next', pathname);
   return NextResponse.redirect(url);
 }
-export const config = { matcher: ['/((?!_next/static|_next/image).*)'] };
+export const config = { matcher: ['/((?!_next/static|_next/image|portal-upload).*)'] };

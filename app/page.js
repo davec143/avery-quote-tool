@@ -12,6 +12,7 @@ import UploadInput from './upload-input';
 import { searchQuotes } from '@/lib/quote-search';
 import { todayEastern } from '@/lib/readiness';
 import { validateUploads, sourceMime } from '@/lib/uploads';
+import { listMemberSubmissions } from '@/lib/portal';
 
 async function upload(formData) {
   'use server';
@@ -38,6 +39,7 @@ export default async function Home({ searchParams }) {
   const cfg = llmConfig();
   const b = brand();
   const ai = aiEnabled(cfg);
+  const memberQueue = listMemberSubmissions();
 
   return (
     <>
@@ -77,6 +79,14 @@ export default async function Home({ searchParams }) {
         </div>
       </div>
 
+      {memberQueue.length > 0 && <section className="card" style={{ marginTop: 16 }} aria-label="Member submissions">
+        <h3>Member submissions to review ({memberQueue.length})</h3>
+        <p className="small muted">Submitted by approved partners at averyled.com/apps/quote. Confirm each comparison, then publish it from its summary page.</p>
+        <ul className="small" style={{ paddingLeft: 18, margin: 0 }}>
+          {memberQueue.map((q) => <li key={q.id}><Link href={`/quotes/${q.id}`}>AQ-{q.id} · {q.portal_project || q.job_name || q.filename}</Link> — {[q.portal_customer_name, q.portal_company].filter(Boolean).join(', ') || 'Member'} · {q.state.label} · {q.created_at?.slice(0, 16)}</li>)}
+        </ul>
+      </section>}
+
       <h2>Find a quote</h2>
       <form action="/" method="get" className="quote-search card">
         <label>Search<input type="search" name="q" defaultValue={results.query} placeholder="Customer, project, quote or SKU" /></label>
@@ -115,6 +125,7 @@ export default async function Home({ searchParams }) {
                     <td>
                       {q.job_name || '—'}
                       <div className="muted small">{q.customer || ''}</div>
+                      {q.shopify_customer_id && <div className="small"><span className="pill medium">Member{q.portal_status === 'published' ? ' · published' : ''}</span></div>}
                     </td>
                     <td>{q.line_count}</td>
                     <td className="num">{c?.totals.savings == null ? '—' : fmt(c.totals.savings)}{c?.counts.unpricedIncluded > 0 && <div className="muted small">{c.counts.priced ? 'Priced lines only' : 'Avery pricing only'}</div>}</td>

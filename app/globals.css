@@ -34,6 +34,8 @@ h3 { font-size: 16px; margin: 0 0 8px; }
 .topbar nav { display: flex; gap: 18px; flex-wrap: wrap; }
 .topbar nav a { opacity: .85; }
 .topbar nav a:hover { opacity: 1; color: var(--gold-light); }
+.topbar nav button.linklike { background: none; border: 0; padding: 0; color: #fff; opacity: .85; font: inherit; font-weight: 400; cursor: pointer; }
+.topbar nav button.linklike:hover { opacity: 1; color: var(--gold-light); }
 .banner { background: #fff4dc; color: #6b4a00; padding: 8px 20px; font-size: 13px; border-bottom: 1px solid #f0dca8; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
 .narrow { max-width: 420px; }

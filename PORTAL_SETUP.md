@@ -1,38 +1,37 @@
 # Member portal — averyled.com/apps/quote
 
-Approved Avery partners submit competitor quotes on averyled.com. The team reviews them in this tool as usual, then publishes the confirmed proposal back to the member. The member sees Avery pricing, savings, spec sheets, and **Add all to cart** / **Buy now**.
+Approved Avery partners use the full Quote Tool with the same account they use on averyled.com. Each member's quotes, comparisons and proposals are tied to their Shopify customer profile, and only they can see them. Confirmed proposals are ordered with **Add all to cart** or **Buy now** on averyled.com.
 
 ## How access works
 
-- The portal is served through a **Shopify App Proxy**. Shopify signs every request and adds the signed-in customer's ID. Cookies are not forwarded.
-- The tool checks the signature, then reads the customer's tags with the Admin API. Only tags matching `approve` (case-insensitive, the same rule as the theme's product page and order form) get access.
-- **Signed-out visitors** see a sign-in prompt. **Signed-in customers without the tag** see the theme's "pending partner approval" message. **If Shopify can't be reached**, access is refused.
-- Page views can use a one-minute cache of the approval check. Uploads and the cart button always re-check approval with Shopify, so removing the tag takes effect at once for ordering.
-- **Isolation:** each quote is stored with the member's Shopify customer ID. Members see only their own quotes, and only proposals the team has published. Unpublished drafts, internal notes, source files, and other customers' quotes are never sent.
-- **Uploads go straight to the app**, not through the proxy. They use a two-hour signed token that is tied to the customer and issued by a verified portal page.
-- The team password still protects every staff page. The portal routes `/portal/*` and `/portal-upload` accept only Shopify-signed requests or upload tokens.
+There is no separate member password. Members sign in on averyled.com with their normal Shopify customer account.
 
-## Team workflow (team-managed mode)
+1. A member opens **averyled.com/apps/quote**, usually from a header link that only approved members see. Shopify forwards the request through the app proxy, signs it, and includes the signed-in customer's ID.
+2. The tool checks the signature, then looks up the customer's tags with the Admin API. Only tags matching `approve` (case-insensitive, the same rule as the theme) get through:
+   - Signed-out visitors see a sign-in prompt.
+   - Signed-in customers without the tag see the theme's "pending partner approval" message.
+   - If Shopify can't be reached, access is refused.
+3. An approved member is handed straight into the full Quote Tool at **quote.averyled.com**:
+   - The hand-off uses a five-minute link that works once and is tied to that customer.
+   - It becomes a 12-hour member sign-in on quote.averyled.com, held in a signed, HttpOnly cookie.
+   - The tool re-checks the `approve` tag with Shopify at least once a minute, so removing the tag ends access at once.
+4. Members use the same screens as the team: upload, draft summary, review and adjust, confirm. They can only see their own quotes.
+   - Every quote is tied to the member's Shopify customer ID.
+   - Every page, action, download and API route checks ownership. Another member's quote, or a team-only quote, returns "not found".
+   - Team pages (catalog, compatibility list, settings, team learning, the all-quotes list) are blocked for members.
+5. A few things are hidden or blocked for members:
+   - Internal notes, internal decision reasons, customer outcome and the review history are hidden.
+   - "Remember" (writing to the shared compatibility list) is ignored for members.
+6. The team keeps the shared password at quote.averyled.com and sees every quote. Member quotes carry a **Member** label, and the home page lists member quotes not yet confirmed.
 
-1. A member uploads a quote. It appears on the tool's home page under **Member submissions to review**, and in the quote list with a **Member** label. The member sees **In review**.
-2. Review and **Confirm & make summary** exactly as today.
-3. On the summary page, use the **Member portal** panel: enter your name, then click **Publish to member**. The member now sees **Proposal ready**.
-4. **If you edit a published quote**, the member sees **Being updated** until you confirm it again. Confirming again republishes it automatically.
-5. **Unpublish from member** hides the proposal again.
-6. **New drafts made from a member's quote** stay linked to that member as **In review**.
+## Ordering
 
-Self-serve publishing, where the member sees results without team review, is not enabled. It would need an explicit rule for which matches skip review.
+On a confirmed, unexpired proposal, the member clicks one of two buttons:
 
-## Buying
+- **Add all to cart:** opens `averyled.com/apps/quote/q/<id>/buy?mode=add`. It adds every recommended variant at full case, box or pack quantities, keeps what is already in the cart, then opens `/cart`.
+- **Buy now:** opens `…/buy?mode=buy`. It replaces the cart with the proposal's items, then goes to `/checkout`.
 
-The proposal page runs on averyled.com, so the buttons use Shopify's own cart:
-
-- **Add all to cart** adds every recommended variant at full case, box or pack quantities, then opens `/cart`. Items already in the cart stay.
-- **Buy now** clears the cart, adds the proposal's items, then goes to `/checkout`.
-
-Before either action, the page asks the portal to re-check approval, ownership, publication, expiry, and each variant's availability and pack size. If anything is wrong, the button shows the reason, and nothing is added partially.
-
-The cart then applies the store's wholesale apps (WSH Wholesale Pricing, BSS B2B) exactly as for any partner order. Confirm with one test order that the partner prices in the cart match what Avery expects to charge.
+These pages run on averyled.com, so the cart is the member's own and the wholesale apps (WSH Wholesale Pricing, BSS B2B) apply partner pricing. Before anything is added, the tool re-checks approval, ownership, confirmation, expiry and each variant's availability and pack size. If any check fails, nothing is added.
 
 ## Status (October 20, 2026)
 
@@ -66,7 +65,8 @@ The cart then applies the store's wholesale apps (WSH Wholesale Pricing, BSS B2B
 | --- | --- |
 | `SHOPIFY_STORE_DOMAIN` | `avery-led.myshopify.com` |
 | `SHOPIFY_CLIENT_ID` | App Client ID |
-| `SHOPIFY_API_SECRET` | App Client secret. Signs the proxy requests and upload tokens |
+| `SHOPIFY_API_SECRET` | App Client secret. Verifies Shopify's proxy signatures |
+| `MEMBER_SESSION_SECRET` | Optional. A separate long random value for signing member sign-ins (defaults to the client secret) |
 | `SHOPIFY_ADMIN_TOKEN` | Optional. A fixed Admin API token instead of the client credentials grant |
 | `SHOPIFY_API_VERSION` | Optional. Default `2026-07` |
 | `PORTAL_APPROVED_TAG` | Optional. Default `approve` |
@@ -80,7 +80,8 @@ Until `SHOPIFY_API_SECRET`, `SHOPIFY_STORE_DOMAIN` and a client ID or admin toke
 
 - [ ] Signed out: `/apps/quote` shows sign-in, and no quote data appears.
 - [ ] Signed in without `approve`: pending message. The cart button returns "approval required."
-- [ ] Approved account: upload a sample quote, review it, confirm and publish it, then open it as the member.
+- [ ] Approved account: click Quote Tool on averyled.com. You land in the tool signed in as yourself. Upload a sample quote, see the draft, Review & adjust, then Confirm.
 - [ ] Add all to cart, then check that partner pricing is applied. Buy now reaches checkout. Do not place an order unless intended.
 - [ ] Remove `approve` from the test account. Ordering is refused immediately; pages stop within a minute.
-- [ ] A second approved account cannot open the first account's proposal URL.
+- [ ] A second approved account cannot open the first account's quote URLs, and sees none of its quotes.
+- [ ] Sign out on quote.averyled.com, then open a quote URL directly. You are sent back to averyled.com sign-in.

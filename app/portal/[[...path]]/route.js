@@ -1,11 +1,14 @@
-// Customer-facing pages, reached only through the Shopify App Proxy: averyled.com/apps/quote/... → /portal/...
-// No team password here: each request must carry a valid Shopify proxy signature and an approved customer.
-import { verifyProxyRequest, memberAccess, portalConfig, portalConfigured, uploadToken } from '@/lib/shopify-portal';
-import { listMemberQuotes, memberProposal } from '@/lib/portal';
-import { dashboardPage, gatePage, notFoundPage, proposalPage } from '@/lib/portal-html';
-import { loadSpecSheets } from '@/lib/spec-sheets';
+// Storefront entry points, reached only through the Shopify App Proxy: averyled.com/apps/quote/... → /portal/...
+// Shopify signs every request with the signed-in customer's ID; approval is the customer's `approve` tag.
+//   /apps/quote                 → sign-in gate, or hand-off into the full Quote Tool as that member
+//   /apps/quote?next=/quotes/5  → same, landing on that quote
+//   /apps/quote/q/5/buy?mode=…  → add the confirmed proposal to the cart (add) or replace the cart and check out (buy)
+//   /apps/quote/q/5/cart        → JSON used by the buy page; always re-checks approval with Shopify
+import { verifyProxyRequest, memberAccess, portalConfig, portalConfigured } from '@/lib/shopify-portal';
+import { memberHandoffToken, safeMemberNext } from '@/lib/member-session';
+import { memberProposal } from '@/lib/portal';
+import { gatePage, notFoundPage, launchPage, buyPage } from '@/lib/portal-html';
 import { loadPurchaseCart } from '@/lib/purchase-cart';
-import { todayEastern } from '@/lib/readiness';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -23,34 +26,27 @@ export async function GET(request, { params }) {
   const proxy = verifyProxyRequest(url.searchParams, { config });
   if (!proxy) return isCart ? json({ ok: false, message: 'Refresh the page and try again.' }, 401) : new Response('Unauthorized', { status: 401 });
 
-  // The cart check always re-verifies approval with Shopify; pages may use a one-minute cache.
-  const access = await memberAccess(proxy.customerId, { config, fresh: isCart });
+  const access = await memberAccess(proxy.customerId, { config, fresh: isCart || !path.length });
   if (access.state !== 'approved') return isCart ? json({ ok: false, message: 'Partner approval is required to order from proposals.' }, 403) : liquid(gatePage(access.state, proxy.prefix));
   const customerId = proxy.customerId;
 
   if (!path.length) {
-    return liquid(dashboardPage({
-      prefix: proxy.prefix, member: access.member, quotes: listMemberQuotes(customerId),
-      uploadUrl: `${config.appOrigin}/portal-upload`, token: uploadToken(customerId, { config }), flash: url.searchParams.get('notice') || '',
-    }));
+    const token = await memberHandoffToken(customerId);
+    if (!token) return liquid(gatePage('unavailable', proxy.prefix), 503);
+    const enter = `${config.appOrigin}/member/enter?${new URLSearchParams({ token, next: safeMemberNext(url.searchParams.get('next')) })}`;
+    return liquid(launchPage(enter));
   }
-  if (path[0] !== 'q' || !/^\d+$/.test(path[1] || '') || path.length > 3 || (path.length === 3 && !isCart)) return liquid(notFoundPage(proxy.prefix, 'Page not found.'), 404);
 
+  const ordering = path[0] === 'q' && /^\d+$/.test(path[1] || '') && path.length === 3 && ['cart', 'buy'].includes(path[2]);
+  if (!ordering) return liquid(notFoundPage(proxy.prefix, 'Page not found.'), 404);
   const found = memberProposal(customerId, Number(path[1]));
-  if (!found?.document) return isCart ? json({ ok: false, message: 'This proposal is not available to order.' }, 404) : liquid(notFoundPage(proxy.prefix), 404);
-  const { document } = found;
-  const expired = !!document.quote.valid_until && document.quote.valid_until < todayEastern();
+  if (!found?.document || !found.state.orderable) return isCart ? json({ ok: false, message: 'Confirm this comparison in the Quote Tool before ordering.' }, 404) : liquid(notFoundPage(proxy.prefix), 404);
 
+  const purchase = await loadPurchaseCart(found.document);
   if (isCart) {
-    if (expired) return json({ ok: false, message: 'This proposal has expired. Contact our team for updated pricing.' }, 409);
-    const purchase = await loadPurchaseCart(document);
     if (!purchase.items?.length) return json({ ok: false, message: purchase.message || 'This proposal cannot be ordered online. Contact our team.' }, 409);
     return json({ ok: true, items: purchase.items.map((i) => ({ id: i.variantId, quantity: i.quantity })), total: purchase.total });
   }
-
-  const [specSheets, purchase] = await Promise.all([
-    loadSpecSheets(document.comparison.orders.map((o) => o.sku)),
-    expired ? Promise.resolve({ items: [], message: '' }) : loadPurchaseCart(document),
-  ]);
-  return liquid(proposalPage({ prefix: proxy.prefix, id: found.quote.id, document, specSheets, purchase, expired }));
+  if (!purchase.items?.length) return liquid(notFoundPage(proxy.prefix, purchase.message || 'This proposal cannot be ordered online.'), 409);
+  return liquid(buyPage({ prefix: proxy.prefix, id: found.quote.id, mode: url.searchParams.get('mode') === 'buy' ? 'buy' : 'add', itemCount: purchase.items.length, total: purchase.total }));
 }

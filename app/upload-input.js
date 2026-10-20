@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { validateUploads } from '@/lib/uploads';
 
-export default function UploadInput() {
+export default function UploadInput({ member = false }) {
   const input = useRef(null);
   const [files, setFiles] = useState([]);
   const [error, setError] = useState('');
@@ -27,7 +27,7 @@ export default function UploadInput() {
         onChange={(e) => choose(Array.from(e.target.files))} />
     </label>
     <p className="muted small">PDF, JPEG or PNG · up to 5 files · 10 MB per file · 18 MB per batch.</p>
-    <p className="muted small">Screenshots are read using the vision-capable AI model selected in Settings. Text PDFs also work with AI off.</p>
+    {!member && <p className="muted small">Screenshots are read using the vision-capable AI model selected in Settings. Text PDFs also work with AI off.</p>}
     {error && <p className="error" role="alert">{error}</p>}
     {files.length > 0 && <ul className="upload-files">{files.map((f, i) => <li key={`${f.name}-${i}`}><span>{f.name} ({(f.size / 1024 / 1024).toFixed(2)} MB)</span>
       <button type="button" disabled={pending} aria-label={`Remove ${f.name}`} onClick={() => choose(files.filter((_, n) => n !== i))}>Remove</button></li>)}</ul>}

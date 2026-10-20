@@ -15,7 +15,7 @@ A team-reviewed product comparison for Avery LED. Upload a competitor's text-bas
 
 ## Member portal
 
-Approved Avery partners can submit competitor quotes at **averyled.com/apps/quote**. Access is enforced by a Shopify App Proxy signature plus the customer's `approve` tag. Submissions appear under **Member submissions to review**. After confirmation, **Publish to member** shows the proposal with **Add all to cart** and **Buy now**. Setup, security model and launch checklist: [PORTAL_SETUP.md](PORTAL_SETUP.md).
+Approved Avery partners use the full Quote Tool with their averyled.com account. **averyled.com/apps/quote** signs them in through Shopify (customer tag `approve`) and opens quote.averyled.com as that member. They see and edit only their own quotes, and order confirmed proposals with **Add all to cart** or **Buy now** on averyled.com. The team keeps the shared password. Details and launch checklist: [PORTAL_SETUP.md](PORTAL_SETUP.md).
 
 ## What blocks confirmation
 

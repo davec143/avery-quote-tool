@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'avery-portal-'));
 process.env.DATA_DIR = folder;
+process.env.MEMBER_SESSION_SECRET = 'member-test-secret';
 const { db, setSetting } = await import('../lib/db.js');
 const { replaceCatalog, toItem } = await import('../lib/catalog.js');
 const { getQuote } = await import('../lib/quotes.js');
@@ -15,6 +16,7 @@ const { duplicateQuote } = await import('../lib/quote-drafts.js');
 const portal = await import('../lib/shopify-portal.js');
 const data = await import('../lib/portal.js');
 const html = await import('../lib/portal-html.js');
+const ms = await import('../lib/member-session.js');
 after(() => { db().close(); fs.rmSync(folder, { recursive: true, force: true }); });
 
 const config = { ...portal.portalConfig(), secret: 'hush', store: 'avery-test.myshopify.com', clientId: 'client', adminToken: '', approvedTag: 'approve', maxAgeSeconds: 600, storefront: 'https://averyled.com', proxyPath: '/apps/quote', appOrigin: 'https://app.example' };
@@ -45,13 +47,25 @@ test('only correctly signed, fresh requests from the configured shop are trusted
   assert.equal(portal.verifyProxyRequest(signed({ ...base, logged_in_customer_id: '' }), { config, now }).customerId, '');
 });
 
-test('upload tokens are customer-bound, expire and cannot be altered', () => {
-  const token = portal.uploadToken('42', { config, now });
-  assert.equal(portal.verifyUploadToken(token, { config, now }), '42');
-  assert.equal(portal.verifyUploadToken(token.replace(/^42\./, '43.'), { config, now }), null);
-  assert.equal(portal.verifyUploadToken(token, { config, now: now + 7201 * 1000 }), null);
-  assert.equal(portal.verifyUploadToken(token, { config: { ...config, secret: 'other' }, now }), null);
-  assert.equal(portal.verifyUploadToken('garbage', { config, now }), null);
+test('member hand-off and session tokens are customer-bound, purpose-bound and expire', async () => {
+  const t = Date.now();
+  const handoff = await ms.memberHandoffToken('42', t), session = await ms.memberSessionToken('42', t);
+  assert.equal(await ms.verifyMemberHandoff(handoff, t), '42');
+  assert.equal(await ms.verifyMemberSession(session, t), '42');
+  assert.equal(await ms.verifyMemberSession(handoff, t), null, 'a hand-off token is not a session');
+  assert.equal(await ms.verifyMemberHandoff(session, t), null, 'a session is not a hand-off token');
+  assert.equal(await ms.verifyMemberHandoff(handoff.replace(/^42\./, '43.'), t), null);
+  assert.equal(await ms.verifyMemberHandoff(handoff, t + 6 * 60 * 1000), null);
+  assert.equal(await ms.verifyMemberSession(session, t + 13 * 60 * 60 * 1000), null);
+  assert.equal(await ms.verifyMemberSession('garbage', t), null);
+  assert.equal(await ms.memberSessionToken('not-a-number', t), null);
+});
+
+test('members can reach only member and quote pages; sign-in redirects stay inside the tool', () => {
+  for (const p of ['/m', '/quotes/5', '/quotes/5/summary', '/api/quotes/5/pdf', '/api/quotes/5/bom', '/api/logo', '/member/signout']) assert.ok(ms.memberPathAllowed(p), p);
+  for (const p of ['/', '/catalog', '/catalog/D60', '/settings', '/compatibility', '/insights', '/api/compat-export', '/api/compat-template', '/quotes/5/../../settings', '/login']) assert.ok(!ms.memberPathAllowed(p), p);
+  assert.equal(ms.safeMemberNext('/quotes/9/summary'), '/quotes/9/summary');
+  for (const bad of ['https://evil.example', '//evil.example', '/settings', '/quotes/9/../x', '', null]) assert.equal(ms.safeMemberNext(bad), '/m');
 });
 
 function shopifyMock(tags, { fail = false, profileFails = false } = {}) {
@@ -108,41 +122,29 @@ function confirm(id) {
   saveReview(id, f, true);
 }
 
-test('members see only their own quotes, and proposals only after the team publishes a confirmed summary', () => {
+test('members see only their own quotes; confirmed, unexpired proposals are orderable', () => {
   const id = memberQuote(), other = memberQuote('77');
   assert.deepEqual(data.listMemberQuotes('42').map((q) => q.id), [id]);
-  assert.equal(data.listMemberQuotes('42')[0].state.key, 'review');
-  assert.equal(data.memberProposal('42', id).document, null);
-  assert.equal(data.memberProposal('42', other), null, 'another customer\'s quote is not found');
-  assert.throws(() => data.publishToMember(id, getQuote(id).revision, 'Kryz'), /Confirm the comparison/);
-  confirm(id);
-  assert.equal(data.memberProposal('42', id).document, null, 'confirmed but unpublished stays in review');
-  assert.throws(() => data.publishToMember(id, getQuote(id).revision, ''), /Enter your name/);
-  assert.throws(() => data.publishToMember(id, getQuote(id).revision - 1, 'Kryz'), /changed/);
-  data.publishToMember(id, getQuote(id).revision, 'Kryz');
-  const found = data.memberProposal('42', id);
-  assert.equal(found.state.key, 'ready'); assert.equal(found.document.ready, true);
-  assert.equal(found.document.quote.notes, undefined, 'internal notes are not in the customer document');
-  assert.equal(data.memberProposal('77', id), null);
-  assert.ok(data.listMemberSubmissions().every((q) => q.id !== id), 'published proposals leave the team queue');
-  // Editing after publication hides it until confirmed again.
-  db().prepare("UPDATE quotes SET status='review', summary_snapshot=NULL WHERE id=?").run(id);
-  assert.equal(data.memberProposal('42', id).state.key, 'updating');
+  assert.equal(data.listMemberQuotes('42')[0].state.key, 'draft');
+  assert.equal(data.memberProposal('42', id).document, null, 'drafts cannot be ordered');
+  assert.equal(data.memberProposal('42', other), null, "another customer's quote is not found");
   assert.ok(data.listMemberSubmissions().some((q) => q.id === id));
   confirm(id);
-  assert.equal(data.memberProposal('42', id).state.key, 'ready');
-  data.unpublishFromMember(id, getQuote(id).revision, 'Kryz');
-  assert.equal(data.memberProposal('42', id).document, null);
-  const staffOnly = Number(db().prepare("INSERT INTO quotes (status,summary_snapshot) VALUES ('done','{}')").run().lastInsertRowid);
-  assert.throws(() => data.publishToMember(staffOnly, 0, 'Kryz'), /not submitted by a member/);
+  const found = data.memberProposal('42', id);
+  assert.equal(found.state.key, 'ready'); assert.equal(found.state.orderable, true); assert.equal(found.document.ready, true);
+  assert.equal(found.document.quote.notes, undefined, 'internal notes are not in the customer document');
+  assert.equal(data.memberProposal('77', id), null);
+  assert.ok(data.listMemberSubmissions().every((q) => q.id !== id), 'confirmed quotes leave the team list');
+  db().prepare("UPDATE quotes SET status='review', summary_snapshot=NULL WHERE id=?").run(id);
+  assert.equal(data.memberProposal('42', id).document, null, 'editing after confirmation stops ordering until confirmed again');
 });
 
-test('expired proposals stay viewable but cannot be ordered', () => {
+test('expired proposals cannot be ordered', () => {
   const id = memberQuote(); confirm(id);
   const snap = JSON.parse(getQuote(id).summary_snapshot); snap.quote.valid_until = '2020-01-01';
   db().prepare("UPDATE quotes SET summary_snapshot=?, valid_until='2020-01-01' WHERE id=?").run(JSON.stringify(snap), id);
-  data.publishToMember(id, getQuote(id).revision, 'Kryz');
-  assert.equal(data.memberProposal('42', id).state.key, 'expired');
+  const found = data.memberProposal('42', id);
+  assert.equal(found.state.key, 'expired'); assert.equal(found.state.orderable, false);
 });
 
 test('a revision of a member quote stays linked to the member as in review', () => {
@@ -164,19 +166,14 @@ test('member uploads are attributed, rate limited and keep extracted customers',
   assert.ok(db().prepare("SELECT 1 FROM quote_events WHERE quote_id=? AND event_type='member_submitted'").get(id));
 });
 
-test('rendered pages are Liquid-safe and escape customer text', () => {
+test('storefront pages are Liquid-safe and escape text', () => {
   assert.equal(html.esc('{{ shop.secret }} {% if %}<script>'), '&#123;&#123; shop.secret &#125;&#125; &#123;% if %&#125;&lt;script&gt;');
-  const quotes = data.listMemberQuotes('900');
-  const dash = html.dashboardPage({ prefix: '/apps/quote', member: { name: '{{ customer.email }}' }, quotes, uploadUrl: 'https://app.example/portal-upload', token: 't', flash: 'submitted' });
-  assert.ok(!/\{\{|\{%/.test(dash)); assert.match(dash, /received/); assert.match(dash, /enctype="multipart\/form-data"/);
-  assert.ok(!html.dashboardPage({ prefix: '/apps/quote', member: {}, quotes: [], uploadUrl: 'u', token: 't', flash: '<b>arbitrary</b>' }).includes('arbitrary'), 'notices come from a fixed list');
-  for (const s of ['guest', 'pending', 'unavailable']) assert.ok(!/\{\{|\{%/.test(html.gatePage(s, '/apps/quote')));
+  const pages = [html.gatePage('guest', '/apps/quote'), html.gatePage('pending', '/apps/quote'), html.gatePage('unavailable', '/apps/quote'),
+    html.launchPage('https://quote.averyled.com/member/enter?token=a.b&next=%2Fm'), html.notFoundPage('/apps/quote', '{{ x }}'),
+    html.buyPage({ prefix: '/apps/quote', id: 5, mode: 'add', itemCount: 2, total: 220 }), html.buyPage({ prefix: '/apps/quote', id: 5, mode: 'buy', itemCount: 1, total: 110 })];
+  for (const page of pages) assert.ok(!/\{\{|\{%/.test(page));
   assert.match(html.gatePage('guest', '/apps/quote'), /return_url=%2Fapps%2Fquote/);
-  const id = memberQuote(); confirm(id); data.publishToMember(id, getQuote(id).revision, 'Kryz');
-  const { document } = data.memberProposal('42', id);
-  const ready = html.proposalPage({ prefix: '/apps/quote', id, document, specSheets: {}, purchase: { items: [{ variantId: 1, quantity: 1 }], total: 100 }, expired: false });
-  assert.ok(!/\{\{|\{%/.test(ready)); assert.match(ready, /Add all to cart/); assert.match(ready, /Buy now/); assert.match(ready, /\/apps\/quote\/q\/\d+\/cart/);
-  const blocked = html.proposalPage({ prefix: '/apps/quote', id, document, specSheets: {}, purchase: { items: [], message: 'D60 is not currently available to buy online.' }, expired: false });
-  assert.ok(!blocked.includes('data-aq-cart="add"')); assert.match(blocked, /not currently available/);
-  assert.ok(!html.proposalPage({ prefix: '/apps/quote', id, document, specSheets: {}, purchase: { items: [{ variantId: 1, quantity: 1 }] }, expired: true }).includes('data-aq-cart="buy"'));
+  assert.match(pages[3], /href="https:\/\/quote\.averyled\.com\/member\/enter\?token=a\.b&amp;next=%2Fm"/);
+  assert.match(pages[5], /\/apps\/quote\/q\/5\/cart/); assert.match(pages[5], /'\/cart'/); assert.ok(!pages[5].includes('/cart/clear.js'));
+  assert.match(pages[6], /\/cart\/clear\.js/); assert.match(pages[6], /'\/checkout'/);
 });

@@ -1,4 +1,5 @@
 import { requireAuth } from '@/lib/auth';
+import { requireQuoteAccess } from '@/lib/access';
 import Link from 'next/link';
 import fs from 'node:fs';
 import { notFound, redirect } from 'next/navigation';
@@ -25,12 +26,20 @@ const SRC_LABEL = { compat: 'Compatibility list', ai: 'AI suggestion', rules: 'B
 
 async function save(formData) {
   'use server';
-  await requireAuth();
   const id = Number(formData.get('quote_id'));
+  const actor = await requireQuoteAccess(id);
   const intent = String(formData.get('intent') || 'save');
   const d = db();
   const current = getQuote(id);
   if (!current) notFound();
+  const home = actor.type === 'member' ? '/m' : '/';
+  if (actor.type === 'member') {
+    // Members edit their own quote only: no shared compatibility-list learning, and team notes stay as they are.
+    for (const key of [...formData.keys()]) if (key.startsWith('learn_')) formData.delete(key);
+    formData.set('notes', current.notes || '');
+    for (const l of current.lines) formData.set(`decision_${l.id}`, l.decision_note || '');
+    if (!String(formData.get('reviewer_name') || '').trim()) formData.set('reviewer_name', actor.member.name || actor.member.email || `Shopify customer ${actor.customerId}`);
+  }
   if (Number(formData.get('revision')) !== current.revision) redirect(`/quotes/${id}?error=This quote changed. Reload before retrying.`);
   if (intent === 'delete') {
     const q = d.prepare('SELECT file_path FROM quotes WHERE id = ?').get(id);
@@ -39,8 +48,8 @@ async function save(formData) {
       d.prepare('DELETE FROM blobs WHERE key = ?').run(`quote_logo_${id}`);
     })();
     if (q?.file_path) fs.rm(q.file_path, () => {});
-    revalidatePath('/');
-    redirect('/');
+    revalidatePath(home);
+    redirect(home);
   }
   if (intent === 'rerun') {
     try { await reprocessQuote(id); }
@@ -68,8 +77,8 @@ async function save(formData) {
 
 async function createDraft(form) {
   'use server';
-  await requireAuth();
   const id=Number(form.get('quote_id'));let newId;
+  await requireQuoteAccess(id);
   try { newId=duplicateQuote(id,form.get('revision')); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
   revalidatePath('/');redirect(`/quotes/${newId}?copied=${id}`);
 }
@@ -85,13 +94,15 @@ async function recordOutcome(form) {
 export default async function QuotePage({ params, searchParams }) {
   const { id } = await params;
   const sp = await searchParams;
+  const actor = await requireQuoteAccess(Number(id));
+  const member = actor.type === 'member';
   const q = getQuote(Number(id));
   if (!q) notFound();
   const c = computeQuote(q, { live: true });
   const catalog = listCatalog();
   const charges=sourceCharges(q.source_charges), catalogMap=Object.fromEntries(catalog.map((i)=>[i.sku,i]));
   const reconciliation = reconcileTotal(q.raw_text, q.lines.map((l) => ({qty:l.qty,unit_price:l.comp_unit_price})),chargeTotal(charges));
-  const history=quoteHistory(q.id);
+  const history=member ? [] : quoteHistory(q.id);
   const pricedCount=c.counts.priced ?? c.summaryRows.filter((r)=>r.theirTotal != null).length;
   const hasSourcePrices=q.lines.some((l)=>l.comp_unit_price != null);
   const missingSourcePrices=q.lines.some((l)=>l.comp_unit_price == null);
@@ -109,7 +120,7 @@ export default async function QuotePage({ params, searchParams }) {
       <div className="spread">
         <div>
           <p className="muted small" style={{ margin: 0 }}>
-            <Link href="/">Quotes</Link> / #{q.id}
+            <Link href={member ? '/m' : '/'}>{member ? 'My quotes' : 'Quotes'}</Link> / #{q.id}
           </p>
           <h1>{q.quote_number || q.filename}</h1>
           <p className="muted" style={{ margin: 0 }}>
@@ -200,7 +211,7 @@ export default async function QuotePage({ params, searchParams }) {
               <th className="num">Savings</th>
               <th>Why</th>
               <th title="Include in summary">In summary</th>
-              <th title="Save this match to the compatibility list">Remember</th>
+              {!member && <th title="Save this match to the compatibility list">Remember</th>}
             </tr>
           </thead>
           <tbody>
@@ -260,15 +271,15 @@ export default async function QuotePage({ params, searchParams }) {
                   <label className="small">Customer-facing spec note
                     <textarea name={`note_${r.id}`} defaultValue={r.customer_note || ''} placeholder="Explain differences and what still needs verification" />
                   </label>
-                  <label className="small">Internal decision reason<input name={`decision_${r.id}`} defaultValue={r.decision_note || ''} placeholder="Why this option or correction?" /></label>
+                  {!member && <label className="small">Internal decision reason<input name={`decision_${r.id}`} defaultValue={r.decision_note || ''} placeholder="Why this option or correction?" /></label>}
                   {!!r.review_required && r.our && <label className="row small"><input type="checkbox" name={`accept_${r.id}`} defaultChecked={!!r.review_accepted} /> I reviewed this option&apos;s requirements and installation/quantity plan.</label>}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   <input type="checkbox" aria-label={`Include line ${r.line_ref} in comparison`} name={`inc_${r.id}`} defaultChecked={!!r.include} disabled={r.state === 'na'} />
                 </td>
-                <td style={{ textAlign: 'center' }}>
+                {!member && <td style={{ textAlign: 'center' }}>
                   <input type="checkbox" aria-label={`Remember reviewed match for line ${r.line_ref}`} name={`learn_${r.id}`} defaultChecked={false} disabled={r.match_source === 'compat'} />
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
@@ -299,8 +310,7 @@ export default async function QuotePage({ params, searchParams }) {
         <label>Customer-facing installation assumptions<textarea name="installation_note" defaultValue={q.installation_note || ''} placeholder="Reviewed circuit distribution, feeds, controls and remaining conditions" /></label>
       </section>
       <p className="small muted">
-        Savings compare the same selected lines, including higher-cost substitutes. Avery quantities are pieces; whole-pack mode combines repeated SKUs and rounds up to full packs. Review units and roll lengths against the source PDF. Selected products without source prices show Avery costs only. Savings use only priced source lines and their allocated Avery costs. N/A and unticked lines stay out of the summary. Tick
-        “Remember” to add a match to the compatibility list so it’s used automatically next time.
+        Savings compare the same selected lines, including higher-cost substitutes. Avery quantities are pieces; whole-pack mode combines repeated SKUs and rounds up to full packs. Review units and roll lengths against the source PDF. Selected products without source prices show Avery costs only. Savings use only priced source lines and their allocated Avery costs. N/A and unticked lines stay out of the summary.{!member && ' Tick “Remember” to add a match to the compatibility list so it’s used automatically next time.'}
       </p>
 
       <section className="card" style={{ marginTop: 20 }}>
@@ -320,13 +330,13 @@ export default async function QuotePage({ params, searchParams }) {
         {hasSourcePrices && <label className="row"><input type="checkbox" name="currency_confirmed" defaultChecked={!!q.currency_confirmed} /> I verified that the supplied competitor prices are in USD.</label>}
         <label className="row"><input type="checkbox" name="quantities_verified" defaultChecked={!!q.quantities_verified} /> I verified every source line, unit price where provided, length / unit of measure, and Avery purchase quantity against the source and product specifications.</label>
         <label>Source total reconciliation note<textarea name="reconciliation_note" defaultValue={q.reconciliation_note || ''} placeholder="If totals differ, explain the verified freight, tax, discount or scope difference. Correct missing lines before confirming." /></label>
-        <p className="small muted">“Save” keeps a draft. “Confirm” validates and freezes the reviewed prices and customer document. Remembered mappings are saved only during confirmation.</p>
+        <p className="small muted">“Save” keeps a draft. “Confirm” validates and freezes the reviewed prices and customer document.{!member && ' Remembered mappings are saved only during confirmation.'}</p>
       </section>
 
-      <label style={{ marginTop: 16 }}>
+      {!member && <label style={{ marginTop: 16 }}>
         Internal notes
         <textarea name="notes" defaultValue={q.notes || ''} />
-      </label>
+      </label>}
 
       <div className="row no-print" style={{ marginTop: 8 }}>
         <SubmitButton label="Save" className="" name="intent" value="save" />
@@ -344,7 +354,7 @@ export default async function QuotePage({ params, searchParams }) {
         <SubmitButton label="Create new draft from this quote" pending="Copying…" />
       </form>
     </section>
-    <section className="card no-print" style={{marginTop:20}}>
+    {!member && <><section className="card no-print" style={{marginTop:20}}>
       <h3>Customer outcome</h3>
       <form action={recordOutcome} key={`outcome-${q.revision}`}>
         <input type="hidden" name="quote_id" value={q.id} /><input type="hidden" name="revision" value={q.revision} />
@@ -357,7 +367,7 @@ export default async function QuotePage({ params, searchParams }) {
     <section className="card no-print" style={{marginTop:20}}><h3>Review history</h3>
       {!history.length && <p>No history recorded yet. Earlier activity was not logged.</p>}
       {history.map((e)=><details key={e.id}><summary>{e.created_at} UTC · {e.actor} · {e.event_type} · revision {e.revision}</summary><pre className="history-details">{JSON.stringify(e.details,null,2)}</pre></details>)}
-    </section>
+    </section></>}
     </>
   );
 }

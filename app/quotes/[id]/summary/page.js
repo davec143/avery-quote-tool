@@ -7,42 +7,15 @@ import { briefConditions } from '@/lib/proposal';
 import { sourceCharges, CHARGE_LABELS } from '@/lib/source-costs';
 import { loadSpecSheets } from '@/lib/spec-sheets';
 import { loadPurchaseCart } from '@/lib/purchase-cart';
-import { redirect } from 'next/navigation';
-import { revalidatePath } from 'next/cache';
-import { requireAuth } from '@/lib/auth';
-import { publishToMember, unpublishFromMember, memberState } from '@/lib/portal';
+import { requireQuoteAccess } from '@/lib/access';
+import { memberState } from '@/lib/portal';
+import { portalConfig } from '@/lib/shopify-portal';
 
-async function memberPublication(formData) {
-  'use server';
-  await requireAuth();
-  const id = Number(formData.get('id'));
-  try {
-    if (formData.get('action') === 'unpublish') unpublishFromMember(id, formData.get('revision'), formData.get('actor'));
-    else publishToMember(id, formData.get('revision'), formData.get('actor'));
-  } catch (e) { redirect(`/quotes/${id}/summary?member_error=${encodeURIComponent(e.message)}`); }
-  revalidatePath(`/quotes/${id}/summary`);
-  redirect(`/quotes/${id}/summary?member_saved=1`);
-}
-
-function MemberPanel({ stored, ready, sp }) {
+function MemberPanel({ stored }) {
   if (!stored.shopify_customer_id) return null;
-  const state = memberState(stored);
   const who = [stored.portal_customer_name, stored.portal_company, stored.portal_customer_email].filter(Boolean).join(' · ') || `Shopify customer ${stored.shopify_customer_id}`;
-  return <section className="card no-print" style={{ marginBottom: 16 }} aria-label="Member portal">
-    <h3>Member portal</h3>
-    <p className="small">Submitted by <b>{who}</b>{stored.portal_project ? <> · Project: {stored.portal_project}</> : null}. Member sees: <b>{state.label}</b>.</p>
-    {stored.portal_note && <p className="small preserve">Member note: {stored.portal_note}</p>}
-    {sp?.member_error && <p className="error small" role="alert">{sp.member_error}</p>}
-    {sp?.member_saved && <p className="ok small" role="status">Member portal updated.</p>}
-    <form action={memberPublication} className="row">
-      <input type="hidden" name="id" value={stored.id} /><input type="hidden" name="revision" value={stored.revision} />
-      <label className="small">Your name <input name="actor" required defaultValue={stored.reviewer_name || ''} /></label>
-      {stored.portal_status === 'published'
-        ? <button type="submit" name="action" value="unpublish">Unpublish from member</button>
-        : <button type="submit" className="primary" name="action" value="publish" disabled={!ready}>Publish to member</button>}
-      {!ready && stored.portal_status !== 'published' && <span className="small muted">Confirm the comparison to publish it.</span>}
-      {stored.portal_status === 'published' && !ready && <span className="small muted">Hidden from the member until you confirm again; it then reappears automatically.</span>}
-    </form>
+  return <section className="card no-print" style={{ marginBottom: 16 }} aria-label="Member quote">
+    <p className="small" style={{ margin: 0 }}><b>Member quote</b> — uploaded by {who} at averyled.com/apps/quote{stored.portal_project ? ` · Project: ${stored.portal_project}` : ''}. The member sees and edits this quote in their own Quote Tool. Status for them: <b>{memberState(stored).label}</b>.</p>
   </section>;
 }
 
@@ -65,9 +38,10 @@ function costDetails(comparison, row) {
     : [purchase, `${order.orderPieces} pieces supplied${order.extraPieces ? ` (${order.extraPieces} extra)` : ''}`];
 }
 
-export default async function SummaryPage({ params, searchParams }) {
+export default async function SummaryPage({ params }) {
   const { id } = await params;
-  const sp = await searchParams;
+  const actor = await requireQuoteAccess(Number(id));
+  const member = actor.type === 'member';
   const stored = getQuote(Number(id));
   if (!stored) notFound();
   const { quote: q, comparison: c, branding: b, ready } = summaryDocument(stored);
@@ -77,6 +51,8 @@ export default async function SummaryPage({ params, searchParams }) {
   const unpricedCount=c.summaryRows.length-pricedCount;
   const comparedOurs=c.totals.comparedOurs ?? c.totals.ours;
   const [documents,purchase]=await Promise.all([loadSpecSheets(c.orders.map((o)=>o.sku)),loadPurchaseCart({quote:q,comparison:c,ready})]);
+  const cfg = portalConfig(), storeBuy = (mode) => `${cfg.storefront}${cfg.proxyPath}/q/${stored.id}/buy?mode=${mode}`;
+  const buyUrl = purchase.url ? (member ? storeBuy('add') : purchase.url) : null;
   const pricingScope=hasComparison
     ? `Price comparison covers ${pricedCount} selected line(s) with source prices${unpricedCount ? `; ${unpricedCount} selected line(s) have no source price and are excluded from savings` : ''}. Avery product subtotal includes all selected products.`
     : 'Source prices were not provided for the selected products. Only Avery pricing is shown; no price comparison is available.';
@@ -98,7 +74,7 @@ export default async function SummaryPage({ params, searchParams }) {
     hasComparison ? `Priced source lines: competitor subtotal ${fmt(c.totals.theirs)}; allocated Avery cost ${fmt(comparedOurs)}. ${higher ? 'Additional cost' : 'Estimated savings'}: ${fmt(Math.abs(c.totals.savings))}${percent ? ` (${percent})` : ''}.` : '',
     'Avery purchase quantities:',
     ...c.orders.map((o) => `${o.sku}: ${o.requiredPieces} pieces required; ${o.packs} × ${o.packLabel} of ${o.packQty} (${o.orderPieces} pieces, ${o.extraPieces} extra); ${fmt(o.total)}${c.priceBasis === 'pack' ? '' : ` per-piece estimate; ${fmt(o.packs*o.packPrice)} if buying full packs`}.${documents[o.sku]?.sheets.map((sheet)=>` Spec sheet: ${sheet.url}`).join('') || ' Spec sheet unavailable.'}`),
-    purchase.url ? `Buy now — all recommended products: ${purchase.url}\nCurrent store product total: ${fmt(purchase.total)} for whole packs. Shopify confirms final prices, availability, shipping and taxes.` : '',
+    buyUrl ? `Buy now — all recommended products: ${buyUrl}\nCurrent store product total: ${fmt(purchase.total)} for whole packs. Shopify confirms final prices, availability, shipping and taxes.` : '',
     estimateDisclaimer,
     ...excluded.map((r) => `Not compared: ${r.comp_sku} × ${r.qty} — ${exclusion(r)}${r.theirTotal != null ? `; source amount ${fmt(r.theirTotal)}` : ''}.`),
     `Reviewed: ${ready ? date(q.reviewed_at) : 'Pending'}. Valid until: ${date(q.valid_until)}${expired ? ' — EXPIRED, REQUEST UPDATED PRICING' : ''}.`,
@@ -116,15 +92,15 @@ export default async function SummaryPage({ params, searchParams }) {
       <div className="row no-print" style={{ marginBottom: 16 }}>
         {ready
           ? <Link className="btn" href={`/quotes/${stored.id}`}>← Back to review</Link>
-          : <><Link className="btn" href="/">← All quotes</Link><Link className="btn primary" href={`/quotes/${stored.id}`}>Review &amp; adjust →</Link></>}
+          : <><Link className="btn" href={member ? '/m' : '/'}>← All quotes</Link><Link className="btn primary" href={`/quotes/${stored.id}`}>Review &amp; adjust →</Link></>}
         <SummaryActions text={text} ready={ready && !expired} />
-        {ready && !expired && <><a className="btn" href={`/api/quotes/${stored.id}/bom`}>Download purchase CSV</a><a className="btn" href={`/api/quotes/${stored.id}/bom?benchmark=1`}>Export reviewed benchmark expectations</a></>}
+        {ready && !expired && <><a className="btn" href={`/api/quotes/${stored.id}/bom`}>Download purchase CSV</a>{!member && <a className="btn" href={`/api/quotes/${stored.id}/bom?benchmark=1`}>Export reviewed benchmark expectations</a>}</>}
         {!ready && <span className="error small">Confirm the comparison before exporting.</span>}
         {expired && <span className="error small">Expired — request an updated comparison.</span>}
       </div>
-      <MemberPanel stored={stored} ready={ready} sp={sp} />
+      {!member && <MemberPanel stored={stored} />}
       <article className="summary">
-        {!ready && <div className="sum-status">DRAFT · Not reviewed · Do not send to customer</div>}
+        {!ready && <div className="sum-status">{member ? 'DRAFT · Check the matches, then confirm to order' : 'DRAFT · Not reviewed · Do not send to customer'}</div>}
         {expired && <div className="sum-status">EXPIRED · Request updated pricing</div>}
         <header className="sum-head">
           <div><img src={ready ? `/api/logo?quote=${stored.id}` : '/api/logo'} alt={b.companyName} className="sum-logo" />{b.tagline && <div className="sum-tag">{b.tagline}</div>}</div>
@@ -138,9 +114,11 @@ export default async function SummaryPage({ params, searchParams }) {
         <section className="sum-scope"><b>{c.counts.compared} of {c.counts.total} product lines selected · All prices USD</b><p>{pricingScope}</p><p>This proposal covers the selected products below. {excluded.length} source line(s) are excluded and listed separately. Tax, freight, installation, controls, and unlisted accessories are excluded. Final order pricing and system suitability require confirmation.</p><p>{c.priceBasis === 'pack' ? 'Avery cost includes full cases, boxes or bundles, rounded up after combining repeated SKUs. Line costs allocate shared pack costs proportionally.' : 'Avery cost is a per-piece estimate. It assumes loose pieces can be supplied; case, box or bundle ordering may cost more. Confirm supply terms before ordering.'}</p></section>
         <section className="buy-all" aria-label="Buy recommended products">
           {purchase.url ? <>
-            <a className="btn primary buy-now" href={purchase.url} target="_blank" rel="noopener noreferrer">Buy now</a>
+            {member
+              ? <span className="row no-print"><a className="btn primary buy-now" href={storeBuy('add')}>Add all to cart</a><a className="btn buy-now" href={storeBuy('buy')}>Buy now</a></span>
+              : <a className="btn primary buy-now" href={purchase.url} target="_blank" rel="noopener noreferrer">Buy now</a>}
             <div><b>All {purchase.items.length} recommended product{purchase.items.length===1 ? '' : 's'} · {fmt(purchase.total)} store product total</b>
-              <p>Opens your Avery Shopify cart with the full cases, boxes or packs shown below. Uses current store prices, which may differ from this saved estimate. {c.priceBasis!=='pack' && 'This full-pack amount can differ from the per-piece estimate above. '}Final prices, availability, shipping and taxes are confirmed in Shopify.</p>
+              <p>{member ? 'Add all to cart keeps anything already in your averyled.com cart; Buy now replaces it and goes to checkout. Your partner pricing is applied there. ' : 'Opens your Avery Shopify cart with the full cases, boxes or packs shown below. '} Uses current store prices, which may differ from this saved estimate. {c.priceBasis!=='pack' && 'This full-pack amount can differ from the per-piece estimate above. '}Final prices, availability, shipping and taxes are confirmed in Shopify.</p>
             </div>
           </> : <><button className="btn" type="button" disabled>Buy now</button><p>{purchase.message}</p></>}
         </section>

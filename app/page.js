@@ -25,7 +25,9 @@ async function upload(formData) {
   let last;
   for (const [i, f] of files.entries()) last = await createQuoteFromSource(f.name, buffers[i]);
   revalidatePath('/');
-  redirect(files.length === 1 ? `/quotes/${last}` : '/');
+  if (files.length !== 1) redirect('/');
+  // Open the draft proposal first; quotes that could not be read go straight to the review screen to fix.
+  redirect(getQuote(last)?.status === 'error' ? `/quotes/${last}` : `/quotes/${last}/summary`);
 }
 
 export default async function Home({ searchParams }) {

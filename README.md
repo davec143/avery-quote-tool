@@ -17,6 +17,10 @@ A team-reviewed product comparison for Avery LED. Upload a competitor's text-bas
 
 Approved Avery partners can submit competitor quotes at **averyled.com/apps/quote**. Access is enforced by a Shopify App Proxy signature plus the customer's `approve` tag. Submissions appear under **Member submissions to review**. After confirmation, **Publish to member** shows the proposal with **Add all to cart** and **Buy now**. Setup, security model and launch checklist: [PORTAL_SETUP.md](PORTAL_SETUP.md).
 
+## What blocks confirmation
+
+Only problems that would make the proposal wrong block **Confirm & make summary**: an unread source, incompatible products, lines with no quantity that can be calculated, invalid prices or quantities, non-USD source pricing, installation conflicts, an expired validity date, or no valid products. Specification notes, per-line acceptance, the USD and quantity ticks, the reviewer name and reconciliation notes are optional. Flagged differences and conditions still print on the customer proposal. Steps 3–7 above describe recommended checks, not required ones.
+
 ## Flexible crossovers
 
 - **Channel:** match profile and total footage, calculate one-metre sections (or an explicit catalog section length), then round to whole bundles. Joined sections, fit and cutting waste are disclosed. Unknown profiles require review; conflicting profiles are rejected.

@@ -114,7 +114,9 @@ export default async function SummaryPage({ params, searchParams }) {
   return (
     <>
       <div className="row no-print" style={{ marginBottom: 16 }}>
-        <Link className="btn" href={`/quotes/${stored.id}`}>← Back to review</Link>
+        {ready
+          ? <Link className="btn" href={`/quotes/${stored.id}`}>← Back to review</Link>
+          : <><Link className="btn" href="/">← All quotes</Link><Link className="btn primary" href={`/quotes/${stored.id}`}>Review &amp; adjust →</Link></>}
         <SummaryActions text={text} ready={ready && !expired} />
         {ready && !expired && <><a className="btn" href={`/api/quotes/${stored.id}/bom`}>Download purchase CSV</a><a className="btn" href={`/api/quotes/${stored.id}/bom?benchmark=1`}>Export reviewed benchmark expectations</a></>}
         {!ready && <span className="error small">Confirm the comparison before exporting.</span>}

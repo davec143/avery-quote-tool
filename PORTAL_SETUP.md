@@ -34,6 +34,11 @@ Before either action, the page asks the portal to re-check approval, ownership, 
 
 The cart then applies the store's wholesale apps (WSH Wholesale Pricing, BSS B2B) exactly as for any partner order. Confirm with one test order that the partner prices in the cart match what Avery expects to charge.
 
+## Status (October 20, 2026)
+
+- Shopify app **Avery Quote Tool** created in the Avery LED Dev Dashboard organization, with scope `read_customers` and the app proxy `apps/quote` → `https://quote.averyled.com/portal` (active version 3). It is installed on the Avery LED store (`avery-led.myshopify.com`), which is in the same organization, so the client credentials grant applies.
+- Still to do: set the Railway variables below, deploy this branch, add the theme link, and run the launch checklist. Until then `/apps/quote` returns an error page and nothing is exposed.
+
 ## One-time Shopify setup
 
 1. In the **Shopify Dev Dashboard**, create an app for the Avery LED store. It must be in the same Shopify organization as averyled.com.
@@ -42,7 +47,7 @@ The cart then applies the store's wholesale apps (WSH Wholesale Pricing, BSS B2B
 3. **App proxy:**
    - Subpath prefix: `apps`
    - Subpath: `quote`
-   - Proxy URL: `https://av-quote-tool.up.railway.app/portal`
+   - Proxy URL: `https://quote.averyled.com/portal`
 4. Release the version and **install the app** on the Avery store.
 5. Copy the **Client ID** and **Client secret** into Railway (see the next section). The tool gets its Admin API token with Shopify's client credentials grant (24-hour tokens, refreshed automatically).
 6. **Theme:** add a "Quote Tool" link for approved members. Example for `sections/header.liquid`, reusing the same check as the product page:
@@ -59,7 +64,7 @@ The cart then applies the store's wholesale apps (WSH Wholesale Pricing, BSS B2B
 
 | Variable | Value |
 | --- | --- |
-| `SHOPIFY_STORE_DOMAIN` | The store's `.myshopify.com` domain (Shopify admin → Settings → Domains) |
+| `SHOPIFY_STORE_DOMAIN` | `avery-led.myshopify.com` |
 | `SHOPIFY_CLIENT_ID` | App Client ID |
 | `SHOPIFY_API_SECRET` | App Client secret. Signs the proxy requests and upload tokens |
 | `SHOPIFY_ADMIN_TOKEN` | Optional. A fixed Admin API token instead of the client credentials grant |
@@ -67,7 +72,7 @@ The cart then applies the store's wholesale apps (WSH Wholesale Pricing, BSS B2B
 | `PORTAL_APPROVED_TAG` | Optional. Default `approve` |
 | `PORTAL_STOREFRONT_URL` | Optional. Default `https://averyled.com` |
 | `PORTAL_PROXY_PATH` | Optional. Default `/apps/quote` |
-| `PORTAL_APP_ORIGIN` | Optional. Default `https://av-quote-tool.up.railway.app` |
+| `PORTAL_APP_ORIGIN` | Optional. Default `https://quote.averyled.com` |
 
 Until `SHOPIFY_API_SECRET`, `SHOPIFY_STORE_DOMAIN` and a client ID or admin token are set, the portal routes return 404. Deploying this branch therefore exposes nothing until Shopify is configured.
 

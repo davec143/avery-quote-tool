@@ -65,9 +65,9 @@ test('freight, tax and positive discount deductions reconcile the source without
   for(const [k,v] of Object.entries({charge_freight:'20',charge_tax:'5',charge_discount:'10',charge_other:''})) f.set(k,v);
   saveReview(id,f,true);const doc=summaryDocument(getQuote(id));assert.equal(doc.comparison.totals.theirs,300);assert.equal(doc.comparison.totals.ours,60);assert.equal(JSON.parse(doc.quote.source_charges).reduce((n,c)=>n+c.amount,0),15);
 });
-test('confirmation requires a named reviewer and outcomes preserve the frozen customer document',async()=>{
-  const id=quote();await rematch(id);const f=form(id);f.set('reviewer_name','');assert.throws(()=>saveReview(id,f,true),/reviewer name/);
-  saveReview(id,form(id),true);const q=getQuote(id),outcome=new FormData();outcome.set('revision',String(q.revision));outcome.set('outcome','declined');outcome.set('actor','Reviewer');
+test('confirmation works without a reviewer name and outcomes preserve the frozen customer document',async()=>{
+  const id=quote();await rematch(id);const f=form(id);f.set('reviewer_name','');
+  saveReview(id,f,true);const q=getQuote(id),outcome=new FormData();outcome.set('revision',String(q.revision));outcome.set('outcome','declined');outcome.set('actor','Reviewer');
   assert.throws(()=>saveOutcome(id,outcome),/reason/);outcome.set('outcome_note','Customer needs a different mounting profile.');saveOutcome(id,outcome);
   assert.equal(getQuote(id).summary_snapshot,q.summary_snapshot);assert.equal(quoteHistory(id)[0].event_type,'outcome');assert.throws(()=>saveOutcome(id,outcome),/changed/);
 });

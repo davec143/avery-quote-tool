@@ -13,6 +13,10 @@ A team-reviewed product comparison for Avery LED. Upload a competitor's text-bas
 7. Record source freight, tax, discounts and other explained charges separately. Resolve or explain any remaining difference between the product-plus-charge total and the printed source total. Complete the applicable USD, quantity and per-line review checks, then **Confirm & make summary**. Confirmation validates and freezes the displayed pricing, catalog descriptions, customer details and branding. Later catalog or settings changes do not change that document. Editing a confirmed comparison returns it to review.
 8. Export the reviewed document with **Print / save as PDF**, **Copy as text**, or **Download purchase CSV**. The proposal opens with Avery costs, available savings on priced source lines, purchase quantities and key conditions; detailed calculations appear in an appendix. Draft and expired summaries disable these buttons. Browser printing itself cannot be prevented; drafts carry a visible warning in the printed document.
 
+## What blocks confirmation
+
+Only problems that would make the proposal wrong block **Confirm & make summary**: an unread source, incompatible products, lines with no quantity that can be calculated, invalid prices or quantities, non-USD source pricing, installation conflicts, an expired validity date, or no valid products. Specification notes, per-line acceptance, the USD and quantity ticks, the reviewer name and reconciliation notes are optional. Flagged differences and conditions still print on the customer proposal. Steps 3–7 above describe recommended checks, not required ones.
+
 ## Flexible crossovers
 
 - **Channel:** match profile and total footage, calculate one-metre sections (or an explicit catalog section length), then round to whole bundles. Joined sections, fit and cutting waste are disclosed. Unknown profiles require review; conflicting profiles are rejected.

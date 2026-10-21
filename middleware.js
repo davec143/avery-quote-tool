@@ -4,6 +4,10 @@ import { MEMBER_COOKIE, verifyMemberSession, memberPathAllowed } from './lib/mem
 
 export async function middleware(req) {
   const { pathname } = req.nextUrl;
+  // Trailing-slash redirects are off so Shopify's proxied /portal/ works; keep them for every other page.
+  if (pathname.length > 1 && pathname.endsWith('/') && !pathname.startsWith('/portal')) {
+    return NextResponse.redirect(new URL(`${pathname.replace(/\/+$/, '') || '/'}${req.nextUrl.search}`, req.url), 308);
+  }
   // Shopify-proxied pages (averyled.com/apps/quote) and the member sign-in hand-off authenticate themselves.
   if (pathname === '/portal' || pathname.startsWith('/portal/') || pathname === '/member/enter') return NextResponse.next();
   if (pathname === '/login' || pathname.startsWith('/_next/') || ['/favicon.ico', '/icon.png', '/avery-logo.png', '/avery-logo-light.png'].includes(pathname)) return NextResponse.next();

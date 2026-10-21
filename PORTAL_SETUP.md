@@ -35,7 +35,7 @@ These pages run on averyled.com, so the cart is the member's own and the wholesa
 
 ## Status (October 20, 2026)
 
-- Shopify app **Avery Quote Tool** created in the Avery LED Dev Dashboard organization, with scope `read_customers` and the app proxy `apps/quote` → `https://quote.averyled.com/portal` (active version 3). It is installed on the Avery LED store (`avery-led.myshopify.com`), which is in the same organization, so the client credentials grant applies.
+- Shopify app **Avery Quote Tool** created in the Avery LED Dev Dashboard organization, with scope `read_customers` and the app proxy `apps/quote` → `https://quote.averyled.com/portal` (active version 3). It is installed on the Avery LED store (`irg1xr-px.myshopify.com`), which is in the same organization, so the client credentials grant applies.
 - Still to do: set the Railway variables below, deploy this branch, add the theme link, and run the launch checklist. Until then `/apps/quote` returns an error page and nothing is exposed.
 
 ## One-time Shopify setup
@@ -63,7 +63,7 @@ These pages run on averyled.com, so the cart is the member's own and the wholesa
 
 | Variable | Value |
 | --- | --- |
-| `SHOPIFY_STORE_DOMAIN` | `avery-led.myshopify.com` |
+| `SHOPIFY_STORE_DOMAIN` | `irg1xr-px.myshopify.com` |
 | `SHOPIFY_CLIENT_ID` | App Client ID |
 | `SHOPIFY_API_SECRET` | App Client secret. Verifies Shopify's proxy signatures |
 | `MEMBER_SESSION_SECRET` | Optional. A separate long random value for signing member sign-ins (defaults to the client secret) |

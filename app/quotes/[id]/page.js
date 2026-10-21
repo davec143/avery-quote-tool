@@ -1,6 +1,6 @@
 import { requireAuth } from '@/lib/auth';
 import { requireQuoteAccess } from '@/lib/access';
-import { memberAiRunsToday, MEMBER_DAILY_AI_RUNS } from '@/lib/portal';
+import { MEMBER_DAILY_AI_RUNS } from '@/lib/portal';
 import Link from 'next/link';
 import fs from 'node:fs';
 import { notFound, redirect } from 'next/navigation';
@@ -21,7 +21,10 @@ import SourceReview from './source-review';
 import ProductChoice from './product-choice';
 import { reviewReadiness } from '@/lib/readiness';
 import { duplicateQuote } from '@/lib/quote-drafts';
+import { publicReason } from '@/lib/reasons';
+import { reserveMemberUsage, MEMBER_DAILY_LIMIT, MEMBER_MAX_LINES } from '@/lib/portal';
 
+const memberName = (actor) => actor.member?.name || actor.member?.email || `Shopify customer ${actor.customerId}`;
 const CAT_LABEL = { tape: 'Tape light', driver: 'Power supplies', channel: 'Aluminum channel', connector: 'Connectors', other: 'Other' };
 const SRC_LABEL = { compat: 'Compatibility list', ai: 'AI suggestion', rules: 'Built-in rules', manual: 'Set by hand' };
 
@@ -39,7 +42,9 @@ async function save(formData) {
     for (const key of [...formData.keys()]) if (key.startsWith('learn_')) formData.delete(key);
     formData.set('notes', current.notes || '');
     for (const l of current.lines) formData.set(`decision_${l.id}`, l.decision_note || '');
-    if (!String(formData.get('reviewer_name') || '').trim()) formData.set('reviewer_name', actor.member.name || actor.member.email || `Shopify customer ${actor.customerId}`);
+    // Avery's commercial terms are set by the team; the reviewer is always the signed-in member.
+    for (const key of ['lead_time', 'payment_terms', 'valid_until']) formData.set(key, current[key] || '');
+    formData.set('reviewer_name', memberName(actor));
   }
   if (Number(formData.get('revision')) !== current.revision) redirect(`/quotes/${id}?error=This quote changed. Reload before retrying.`);
   if (intent === 'delete') {
@@ -52,7 +57,10 @@ async function save(formData) {
     revalidatePath(home);
     redirect(home);
   }
-  if (actor.type === 'member' && ['rerun', 'rematch'].includes(intent) && memberAiRunsToday(actor.customerId) >= MEMBER_DAILY_AI_RUNS) {
+  if (actor.type === 'member' && intent === 'addline' && current.lines.length >= MEMBER_MAX_LINES) {
+    redirect(`/quotes/${id}?error=${encodeURIComponent(`A quote can have up to ${MEMBER_MAX_LINES} lines. Contact our team for larger projects.`)}`);
+  }
+  if (actor.type === 'member' && ['rerun', 'rematch'].includes(intent) && !reserveMemberUsage(actor.customerId, 'ai', 1, MEMBER_DAILY_AI_RUNS)) {
     redirect(`/quotes/${id}?error=${encodeURIComponent('You have reached today\'s limit for re-reading and re-matching quotes. Try again tomorrow or contact our team.')}`);
   }
   if (intent === 'rerun') {
@@ -82,9 +90,10 @@ async function save(formData) {
 async function createDraft(form) {
   'use server';
   const id=Number(form.get('quote_id'));let newId;
-  await requireQuoteAccess(id);
-  try { newId=duplicateQuote(id,form.get('revision')); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
-  revalidatePath('/');redirect(`/quotes/${newId}?copied=${id}`);
+  const actor = await requireQuoteAccess(id);
+  if (actor.type === 'member' && !reserveMemberUsage(actor.customerId, 'upload', 1, MEMBER_DAILY_LIMIT)) redirect(`/quotes/${id}?error=${encodeURIComponent(`You can add up to ${MEMBER_DAILY_LIMIT} quotes a day, including copies. Try again tomorrow.`)}`);
+  try { newId=duplicateQuote(id,form.get('revision'),actor.type === 'member' ? memberName(actor) : 'Team'); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
+  revalidatePath(actor.type === 'member' ? '/m' : '/');redirect(`/quotes/${newId}?copied=${id}`);
 }
 
 async function recordOutcome(form) {
@@ -270,7 +279,7 @@ export default async function QuotePage({ params, searchParams }) {
                 <td>
                   <span className={`pill ${r.match_kind === 'exact' ? 'high' : r.match_kind === 'alternative' ? 'medium' : 'low'}`}>{MATCH_LABELS[r.match_kind] || 'Option requiring review'}</span>{' '}
                   <span className="pill src">{SRC_LABEL[r.match_source] || r.match_source}</span>
-                  <div className="reason">{r.reason}</div>
+                  <div className="reason">{member ? publicReason(r.reason) : r.reason}</div>
                   {r.difference_notes && <p className="reason"><b>Customer disclosure:</b> {r.difference_notes}</p>}
                   <label className="small">Customer-facing spec note
                     <textarea name={`note_${r.id}`} defaultValue={r.customer_note || ''} placeholder="Explain differences and what still needs verification" />
@@ -321,12 +330,18 @@ export default async function QuotePage({ params, searchParams }) {
         <h3 id="customer-review">Customer information and review</h3>
         <p className="small muted">This is a product comparison. Enter the terms you can substantiate; blank terms are shown as “To be confirmed.”</p>
         <div className="grid2">
+          {member ? <>
+            <p className="small"><b>Lead time / availability:</b> {q.lead_time || 'To be confirmed with Avery'}</p>
+            <p className="small"><b>Payment terms:</b> {q.payment_terms || 'To be confirmed with Avery'}</p>
+            <p className="small"><b>Comparison valid until:</b> {q.valid_until || 'To be confirmed with Avery'}</p>
+          </> : <>
           <label>Lead time / availability<input name="lead_time" defaultValue={q.lead_time || ''} placeholder="Confirm stock and delivery with Avery" /></label>
           <label>Payment terms<input name="payment_terms" defaultValue={q.payment_terms || ''} /></label>
           <label>Comparison valid until<input type="date" name="valid_until" defaultValue={q.valid_until || ''} /></label>
+          </>}
           <label>Customer-facing project notes<textarea name="customer_notes" defaultValue={q.customer_notes || ''} /></label>
         </div>
-        <label>Reviewer name<input name="reviewer_name" defaultValue={q.reviewer_name || ''} placeholder="Required at confirmation" /></label>
+        {member ? <p className="small"><b>Reviewed by:</b> {memberName(actor)}</p> : <label>Reviewer name<input name="reviewer_name" defaultValue={q.reviewer_name || ''} placeholder="Required at confirmation" /></label>}
         <h3>Source charges and reconciliation</h3>
         <p className="small muted">Printed source total: {fmt(printedTotal(q.raw_text))}. {hasSourcePrices ? `Known source product amounts: ${fmt(q.lines.reduce((n,l)=>n+(l.comp_unit_price ?? 0)*l.qty,0))}.` : 'Source product prices not provided.'} Recorded adjustments: {fmt(chargeTotal(charges))}. These charges are excluded from product comparisons. {missingSourcePrices && 'Full source total reconciliation is unavailable because some source prices are missing; verify every source line and quantity.'}</p>
         <div className="grid2">{Object.entries(CHARGE_LABELS).map(([kind,label])=><label key={kind}>{label}{kind==='discount' ? ' (positive deduction)' : ''}<input name={`charge_${kind}`} type="number" min="0" step="0.01" defaultValue={Math.abs(charges.find((c)=>c.kind===kind)?.amount || 0) || ''} /></label>)}</div>

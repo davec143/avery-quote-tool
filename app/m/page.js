@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { requireMember } from '@/lib/access';
-import { createMemberQuotes, listMemberQuotes, memberSubmissionsToday, MEMBER_DAILY_LIMIT } from '@/lib/portal';
+import { createMemberQuotes, listMemberQuotes, reserveMemberUsage, MEMBER_DAILY_LIMIT } from '@/lib/portal';
 import { getQuote } from '@/lib/quotes';
 import { listCatalog } from '@/lib/catalog';
 import { validateUploads, sourceMime } from '@/lib/uploads';
@@ -18,10 +18,11 @@ async function upload(formData) {
   const actor = await requireMember();
   const files = formData.getAll('pdf').filter((f) => f && f.size);
   try { validateUploads(files); } catch (e) { redirect(`/m?error=${encodeURIComponent(e.message)}`); }
-  if (memberSubmissionsToday(actor.customerId) + files.length > MEMBER_DAILY_LIMIT) redirect(`/m?error=${encodeURIComponent(`You can compare up to ${MEMBER_DAILY_LIMIT} quotes a day. Contact our team if you need more today.`)}`);
   if (!listCatalog().length) redirect('/m?error=The Quote Tool is temporarily unavailable. Please try again shortly.');
   const buffers = await Promise.all(files.map((f) => f.arrayBuffer().then((b) => Buffer.from(b))));
   try { buffers.forEach((b, i) => sourceMime(files[i].name, b)); } catch (e) { redirect(`/m?error=${encodeURIComponent(e.message)}`); }
+  // Reserved atomically before any AI call, so parallel submissions can't exceed the daily allowance.
+  if (!reserveMemberUsage(actor.customerId, 'upload', files.length, MEMBER_DAILY_LIMIT)) redirect(`/m?error=${encodeURIComponent(`You can compare up to ${MEMBER_DAILY_LIMIT} quotes a day. Contact our team if you need more today.`)}`);
   const ids = await createMemberQuotes(actor.member, files.map((f, i) => ({ name: f.name, buffer: buffers[i] })), { project: formData.get('project') || '' });
   revalidatePath('/m');
   if (ids.length !== 1) redirect('/m');

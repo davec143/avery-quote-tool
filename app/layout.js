@@ -25,7 +25,7 @@ export default async function RootLayout({ children }) {
             <Link href="/m">My quotes</Link>
             <a href={portalConfig().storefront}>averyled.com</a>
             <form action="/member/signout" method="post" style={{ display: 'inline' }}><button type="submit" className="linklike">Sign out</button></form>
-          </nav> : <nav>
+          </nav> : actor?.type === 'staff' && <nav>
             <Link href="/">Quotes</Link>
             <Link href="/compatibility">Compatibility list</Link>
             <Link href="/catalog">Catalog</Link>

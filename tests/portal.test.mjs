@@ -177,3 +177,13 @@ test('storefront pages are Liquid-safe and escape text', () => {
   assert.match(pages[5], /\/apps\/quote\/q\/5\/cart/); assert.match(pages[5], /'\/cart'/); assert.ok(!pages[5].includes('/cart/clear.js'));
   assert.match(pages[6], /\/cart\/clear\.js/); assert.match(pages[6], /'\/checkout'/);
 });
+
+test('startup portal check reports shop and approved-tag visibility without personal data', async () => {
+  portal.clearMemberCache();
+  const fetcher = async (url) => url.endsWith('/access_token') ? Response.json({ access_token: 't', expires_in: 86399 }) : Response.json({ data: { shop: { myshopifyDomain: 'avery-test.myshopify.com' }, sample: { nodes: [{ tags: ['Approve'] }] } } });
+  assert.equal(await portal.portalCheck({ config, fetcher }), 'ok: shop=avery-test.myshopify.com approvedCustomerFound=true tagMatches=true apiVersion=' + config.apiVersion);
+  assert.match(await portal.portalCheck({ config: { ...config, secret: '' } }), /skipped/);
+  portal.clearMemberCache();
+  const denied = async (url) => url.endsWith('/access_token') ? Response.json({ access_token: 't' }) : Response.json({ errors: [{ message: 'Access denied for customers field.' }] });
+  assert.match(await portal.portalCheck({ config, fetcher: denied }), /^error: Access denied/);
+});

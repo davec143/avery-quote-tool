@@ -9,7 +9,7 @@ export async function middleware(req) {
     return NextResponse.redirect(new URL(`${pathname.replace(/\/+$/, '') || '/'}${req.nextUrl.search}`, req.url), 308);
   }
   // Shopify-proxied pages (averyled.com/apps/quote) and the member sign-in hand-off authenticate themselves.
-  if (pathname === '/portal' || pathname.startsWith('/portal/') || pathname === '/member/enter') return NextResponse.next();
+  if (pathname === '/portal' || pathname.startsWith('/portal/') || pathname === '/member/enter' || pathname === '/member/signout') return NextResponse.next();
   if (pathname === '/login' || pathname.startsWith('/_next/') || ['/favicon.ico', '/icon.png', '/avery-logo.png', '/avery-logo-light.png'].includes(pathname)) return NextResponse.next();
   const password = process.env.APP_PASSWORD;
   if (!password) {

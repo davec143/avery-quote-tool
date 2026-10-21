@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getQuote, summaryDocument, fmt } from '@/lib/quotes';
 import SummaryActions from './summary-actions';
 import { MATCH_LABELS } from '@/lib/crossover';
@@ -44,6 +44,7 @@ export default async function SummaryPage({ params }) {
   const member = actor.type === 'member';
   const stored = getQuote(Number(id));
   if (!stored) notFound();
+  if (stored.status === 'error') redirect(`/quotes/${stored.id}`);
   const { quote: q, comparison: c, branding: b, ready } = summaryDocument(stored);
   const excluded = c.rows.filter((r) => !r.inSummary);
   const pricedCount=c.counts.priced ?? c.summaryRows.filter((r)=>r.theirTotal != null).length;

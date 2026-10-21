@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { requireMember } from '@/lib/access';
 import { createMemberQuotes, listMemberQuotes, memberSubmissionsToday, MEMBER_DAILY_LIMIT } from '@/lib/portal';
+import { getQuote } from '@/lib/quotes';
 import { listCatalog } from '@/lib/catalog';
 import { validateUploads, sourceMime } from '@/lib/uploads';
 import { portalConfig } from '@/lib/shopify-portal';
@@ -23,7 +24,9 @@ async function upload(formData) {
   try { buffers.forEach((b, i) => sourceMime(files[i].name, b)); } catch (e) { redirect(`/m?error=${encodeURIComponent(e.message)}`); }
   const ids = await createMemberQuotes(actor.member, files.map((f, i) => ({ name: f.name, buffer: buffers[i] })), { project: formData.get('project') || '' });
   revalidatePath('/m');
-  redirect(ids.length === 1 ? `/quotes/${ids[0]}/summary` : '/m');
+  if (ids.length !== 1) redirect('/m');
+  // A file that couldn't be read opens the review screen, which explains the problem, instead of an empty draft.
+  redirect(getQuote(ids[0])?.status === 'error' ? `/quotes/${ids[0]}` : `/quotes/${ids[0]}/summary`);
 }
 
 export default async function MemberHome({ searchParams }) {

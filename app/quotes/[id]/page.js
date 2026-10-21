@@ -1,5 +1,6 @@
 import { requireAuth } from '@/lib/auth';
 import { requireQuoteAccess } from '@/lib/access';
+import { memberAiRunsToday, MEMBER_DAILY_AI_RUNS } from '@/lib/portal';
 import Link from 'next/link';
 import fs from 'node:fs';
 import { notFound, redirect } from 'next/navigation';
@@ -50,6 +51,9 @@ async function save(formData) {
     if (q?.file_path) fs.rm(q.file_path, () => {});
     revalidatePath(home);
     redirect(home);
+  }
+  if (actor.type === 'member' && ['rerun', 'rematch'].includes(intent) && memberAiRunsToday(actor.customerId) >= MEMBER_DAILY_AI_RUNS) {
+    redirect(`/quotes/${id}?error=${encodeURIComponent('You have reached today\'s limit for re-reading and re-matching quotes. Try again tomorrow or contact our team.')}`);
   }
   if (intent === 'rerun') {
     try { await reprocessQuote(id); }

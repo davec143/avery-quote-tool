@@ -187,3 +187,13 @@ test('startup portal check reports shop and approved-tag visibility without pers
   const denied = async (url) => url.endsWith('/access_token') ? Response.json({ access_token: 't' }) : Response.json({ errors: [{ message: 'Access denied for customers field.' }] });
   assert.match(await portal.portalCheck({ config, fetcher: denied }), /^error: Access denied/);
 });
+
+test('member AI re-runs are counted per member over 24 hours', () => {
+  const id = memberQuote('88'), other = memberQuote('89');
+  const ins = db().prepare("INSERT INTO quote_events (quote_id,revision,event_type,actor,details_json) VALUES (?,?,?,?,'{}')");
+  ins.run(id, 1, 'rematched', 'm'); ins.run(id, 2, 'source_read', 'm'); ins.run(id, 3, 'saved', 'm'); ins.run(other, 1, 'rematched', 'x');
+  db().prepare("INSERT INTO quote_events (quote_id,revision,event_type,actor,details_json,created_at) VALUES (?,4,'rematched','m','{}',datetime('now','-2 days'))").run(id);
+  assert.equal(data.memberAiRunsToday('88'), 2);
+  assert.equal(data.memberAiRunsToday('89'), 1);
+  assert.equal(data.memberAiRunsToday('90'), 0);
+});

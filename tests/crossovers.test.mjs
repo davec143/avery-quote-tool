@@ -191,11 +191,11 @@ test('confirmation rechecks terminal-block dependencies after excluding tape',as
   const q=getQuote(id),f=form(id);f.delete(`inc_${q.lines[0].id}`);
   assert.throws(()=>saveReview(id,f,true),/Connector width mismatch/);
 });
-test('automatic quantity changes must be saved before confirming the displayed purchase',async()=>{
+test('confirming straight after a source quantity edit freezes the recalculated purchase',async()=>{
   const id=insert([line(1,'24V tape light 3000K 200 lm/ft 10mm 10ft',3)]);await rematch(id);
   const f=form(id);f.set(`qty_${getQuote(id).lines[0].id}`,'5');
-  assert.throws(()=>saveReview(id,f,true),/Save to recalculate/);
-  saveReview(id,f);saveReview(id,form(id),true);assert.equal(getQuote(id).lines[0].our_qty,5);
+  saveReview(id,f,true);assert.equal(getQuote(id).lines[0].our_qty,5);
+  assert.equal(JSON.parse(getQuote(id).summary_snapshot).comparison.rows[0].ourQty,5);
 });
 test('exact checked tape specs and unknown brightness produce different classifications',async()=>{
   assert.equal((await proposed([line(1,'24V tape light 3000K 200 lm/ft 10mm 16.4ft')]))[0].match_kind,'exact');
@@ -211,15 +211,15 @@ test('continuous tape cuts cannot be allocated on footage alone; metre explanati
   const rows=evaluateCrossovers([line(1,'24V tape light 3000K 200 lm/ft 10mm 10ft',3),line(2,'24V tape light 3000K 200 lm/ft 10mm priced per metre',10)],cat);
   assert.equal(rows[0].our_qty,3);assert.match(rows[1].qty_basis,/10 m = 32.81 ft/);
 });
-test('unknown lengths require documented manual quantity and per-line acceptance',async()=>{
+test('unknown lengths require a manual quantity, but no per-line acceptance',async()=>{
   const id=insert([line(1,'24V tape light 3000K 200 lm/ft 10mm',2)]);await rematch(id);
   assert.throws(()=>saveReview(id,form(id),true),/manual quantity/);
-  const l=getQuote(id).lines[0],f=form(id);f.set(`mode_${l.id}`,'manual');f.set(`oq_${l.id}`,'3');f.delete(`accept_${l.id}`);
-  assert.throws(()=>saveReview(id,f,true),/explicitly accept/);f.set(`accept_${l.id}`,'on');saveReview(id,f,true);assert.equal(getQuote(id).status,'done');
+  const l=getQuote(id).lines[0],f=form(id);f.set(`mode_${l.id}`,'manual');f.set(`oq_${l.id}`,'3');f.delete(`accept_${l.id}`);f.set(`note_${l.id}`,'');
+  saveReview(id,f,true);assert.equal(getQuote(id).status,'done');
 });
-test('source-total differences must be corrected or explicitly explained',async()=>{
+test('source-total differences are flagged but an explanation is optional',async()=>{
   const id=insert([]);await runPipeline(id,'1 SRC-DRIVER $100.00 1 $100.00\n24V 100W non-dimmable driver\n\nQuote Total: $200.00');
-  assert.throws(()=>saveReview(id,form(id),true),/source total difference/);
+  assert.match(getQuote(id).error,/200/);
   const f=form(id);f.set('reconciliation_note','Verified $100 freight excluded from product comparison.');saveReview(id,f,true);
   assert.match(JSON.parse(getQuote(id).summary_snapshot).quote.reconciliation_note,/freight/);
 });

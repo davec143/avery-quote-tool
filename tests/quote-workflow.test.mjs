@@ -23,14 +23,14 @@ function form(q) {
  const f=new FormData();for(const [k,v] of Object.entries({revision:q.revision,customer:q.customer,reviewer_name:q.reviewer_name||'',quantities_verified:q.quantities_verified?'on':'',currency_confirmed:q.currency_confirmed?'on':''})) if(v!=='') f.set(k,String(v));
  for(const l of q.lines)for(const [k,v] of Object.entries({qty:l.qty,oq:l.our_qty,price:l.comp_unit_price??'',sku:l.our_sku,mode:l.quantity_mode,inc:'on',note:l.customer_note||'',...(l.review_accepted?{accept:'on'}:{})}))f.set(`${k}_${l.id}`,String(v));return f;
 }
-test('checklist and confirmation report the same missing approval; valid form can confirm',()=>{
- const id=source();let q=getQuote(id);const issues=reviewReadiness(q,catalogBySku(),'pack');assert.equal(issues.length,3);assert.equal(issues[0].target,'customer-review');assert.throws(()=>saveReview(id,form(q),true),e=>e.message===issues[0].message);
- const f=form(q);f.set('currency_confirmed','on');f.set('quantities_verified','on');f.set('reviewer_name','Synthetic tester');saveReview(id,f,true);
+test('no acknowledgement ticks or reviewer name are needed to confirm',()=>{
+ const id=source();let q=getQuote(id);assert.deepEqual(reviewReadiness(q,catalogBySku(),'pack'),[]);
+ saveReview(id,form(q),true);
  q=getQuote(id);assert.deepEqual(reviewReadiness(q,catalogBySku(),'pack'),[]);assert.equal(summaryDocument(q).ready,true);
 });
-test('changed source wattage requires recalculation before confirmation',()=>{
+test('changed source wattage is recalculated on confirmation',()=>{
  const id=source();db().prepare("UPDATE quote_lines SET comp_desc='24V 30W non-dimmable driver',qty=10,our_qty=10 WHERE quote_id=?").run(id);
- const issues=reviewReadiness(getQuote(id),catalogBySku(),'pack');assert.ok(issues.some(i=>/Save to recalculate/.test(i.message)));assert.ok(issues.some(i=>i.target===`line-${getQuote(id).lines[0].id}`));
+ saveReview(id,form(getQuote(id)),true);assert.equal(getQuote(id).lines[0].our_qty,5);
 });
 test('copy preserves the approved original, uses current pricing and resets every approval',()=>{
  const id=source(),q=getQuote(id),f=form(q);f.set('currency_confirmed','on');f.set('quantities_verified','on');f.set('reviewer_name','Synthetic tester');saveReview(id,f,true);

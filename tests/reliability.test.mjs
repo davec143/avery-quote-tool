@@ -81,10 +81,10 @@ test('invalid form values fail atomically, preserving all original data', () => 
   const {id,lid}=quote(), f=form(id);f.set(`qty_${lid}`,'-4');f.set('customer','SHOULD NOT SAVE');
   assert.throws(()=>saveReview(id,f,false),/positive quantity/);assert.equal(getQuote(id).customer,'Test customer');assert.equal(getQuote(id).lines[0].qty,5);
 });
-test('confirmation requires USD verification, quantity review, and specification notes', () => {
-  const {id,lid}=quote(), f=form(id);f.delete('currency_confirmed');assert.throws(()=>saveReview(id,f,true),/USD/);
-  f.set('currency_confirmed','on');f.delete('quantities_verified');assert.throws(()=>saveReview(id,f,true),/roll lengths/);
-  f.set('quantities_verified','on');db().prepare("UPDATE quote_lines SET comp_desc='96W non-dimmable driver', comp_sku='COMP-96W' WHERE id=?").run(lid);f.set(`note_${lid}`,'');assert.throws(()=>saveReview(id,f,true),/specification note/);
+test('confirmation does not require USD/quantity ticks or specification notes', () => {
+  const {id,lid}=quote(), f=form(id);f.delete('currency_confirmed');f.delete('quantities_verified');
+  db().prepare("UPDATE quote_lines SET comp_desc='96W non-dimmable driver', comp_sku='COMP-96W' WHERE id=?").run(lid);f.set(`note_${lid}`,'');
+  saveReview(id,f,true);assert.equal(getQuote(id).status,'done');
 });
 test('reviewed document freezes pricing, customer information and branding across catalog changes', () => {
   const {id}=quote(),f=form(id);setSetting('price_basis','pack');setSetting('company_name','Avery LED');saveReview(id,f,true);

@@ -1,14 +1,14 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { sessionToken, safeNext } from '@/lib/session';
-import { passwordMatches, loginBlocked, recordLoginFailure, clearLoginFailures } from '@/lib/login-guard';
+import { passwordMatches, loginBlocked, recordLoginFailure, clearLoginFailures, clientAddress } from '@/lib/login-guard';
 
 async function login(formData) {
   'use server';
   const pw = String(formData.get('password') || '');
   const next = safeNext(formData.get('next'));
   const h = await headers();
-  const who = (h.get('x-forwarded-for') || h.get('x-real-ip') || 'unknown').split(',')[0].trim();
+  const who = clientAddress(h);
   if (loginBlocked(who)) redirect(`/login?error=2&next=${encodeURIComponent(next)}`);
   if (!passwordMatches(pw, process.env.APP_PASSWORD)) {
     recordLoginFailure(who);

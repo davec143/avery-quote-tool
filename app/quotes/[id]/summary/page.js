@@ -1,5 +1,6 @@
+import { publicReason } from '@/lib/reasons';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getQuote, summaryDocument, fmt } from '@/lib/quotes';
 import SummaryActions from './summary-actions';
 import { MATCH_LABELS } from '@/lib/crossover';
@@ -19,7 +20,7 @@ function MemberPanel({ stored }) {
   </section>;
 }
 
-const exclusion = (r) => r.state === 'na' ? (r.reason || 'No compatible Avery product selected') : r.state === 'invalid_source_price' ? 'Conflicting or invalid source price needs correction' : r.state.startsWith('invalid') ? 'Quantity or catalog price needs correction' : 'Excluded during review';
+const exclusion = (r) => r.state === 'na' ? (publicReason(r.reason) || 'No compatible Avery product selected') : r.state === 'invalid_source_price' ? 'Conflicting or invalid source price needs correction' : r.state.startsWith('invalid') ? 'Quantity or catalog price needs correction' : 'Excluded during review';
 const date = (value) => value ? new Date(value.length === 10 ? `${value}T12:00:00Z` : value).toLocaleDateString('en-US', { timeZone: value.length === 10 ? 'UTC' : 'America/New_York', year: 'numeric', month: 'long', day: 'numeric' }) : 'To be confirmed';
 const estimateDisclaimer = 'This is an estimate. Contact our team for the final price before placing your order.';
 const unitLabel = (item, n) => item?.category === 'tape' ? (n === 1 ? 'roll' : 'rolls') : item?.category === 'channel' ? (n === 1 ? 'section' : 'sections') : (n === 1 ? 'piece' : 'pieces');
@@ -44,6 +45,7 @@ export default async function SummaryPage({ params }) {
   const member = actor.type === 'member';
   const stored = getQuote(Number(id));
   if (!stored) notFound();
+  if (stored.status === 'error') redirect(`/quotes/${stored.id}`);
   const { quote: q, comparison: c, branding: b, ready } = summaryDocument(stored);
   const excluded = c.rows.filter((r) => !r.inSummary);
   const pricedCount=c.counts.priced ?? c.summaryRows.filter((r)=>r.theirTotal != null).length;

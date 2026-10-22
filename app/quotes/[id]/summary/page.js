@@ -97,6 +97,8 @@ export default async function SummaryPage({ params }) {
           : <><Link className="btn" href={member ? '/m' : '/'}>← All quotes</Link><Link className="btn primary" href={`/quotes/${stored.id}`}>Review &amp; adjust →</Link></>}
         <SummaryActions text={text} ready={ready && !expired} />
         {ready && !expired && <><a className="btn" href={`/api/quotes/${stored.id}/bom`}>Download purchase CSV</a>{!member && <a className="btn" href={`/api/quotes/${stored.id}/bom?benchmark=1`}>Export reviewed benchmark expectations</a>}</>}
+        {stored.file_path && <a className="btn" href={`/api/quotes/${stored.id}/pdf`} target="_blank" rel="noreferrer">Their original {stored.source_type?.startsWith('image/') ? 'image' : 'PDF'}</a>}
+        {member && b.intakeEmail && <a className="btn" href={`mailto:${b.intakeEmail}?subject=${encodeURIComponent(`Quote Tool comparison AQ-${stored.id}${q.quote_number ? ` (${q.quote_number})` : ''}`)}&body=${encodeURIComponent(`Hi Avery team,\n\nI'd like to talk about comparison AQ-${stored.id}.\n\n`)}`}>Talk to a rep</a>}
         {!ready && <span className="error small">Confirm the comparison before exporting.</span>}
         {expired && <span className="error small">Expired — request an updated comparison.</span>}
       </div>
@@ -146,6 +148,7 @@ export default async function SummaryPage({ params }) {
         </section>
         <footer className="sum-foot"><p>{b.disclaimer}</p><p>Comparison AQ-{stored.id} · {ready ? 'Reviewed prices saved with this comparison' : 'Draft prices may change until reviewed'}</p></footer>
       </article>
+      {member && <p className="no-print small muted" style={{ textAlign: 'center', marginTop: 16 }}>Need to change a product or quantity? <Link href={`/quotes/${stored.id}`}>Open the detailed comparison</Link>{b.intakeEmail ? <> · Questions? <a href={`mailto:${b.intakeEmail}`}>{b.intakeEmail}</a></> : null}</p>}
       <style>{`
         .summary { background:#fff; border:1px solid var(--line); border-radius:12px; padding:36px; max-width:1100px; margin:0 auto; }
         .sum-status { border:2px solid #a45d12; background:#fff5dc; color:#70410b; padding:12px; margin-bottom:20px; font-weight:700; }

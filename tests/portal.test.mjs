@@ -62,11 +62,9 @@ test('member hand-off and session tokens are customer-bound, purpose-bound and e
   assert.equal(await ms.memberSessionToken('not-a-number', t), null);
 });
 
-test('members can reach only member and quote pages; sign-in redirects stay inside the tool', () => {
-  for (const p of ['/m', '/quotes/5', '/quotes/5/summary', '/api/quotes/5/pdf', '/api/quotes/5/bom', '/api/logo', '/member/signout']) assert.ok(ms.memberPathAllowed(p), p);
-  for (const p of ['/', '/catalog', '/catalog/D60', '/settings', '/compatibility', '/insights', '/api/compat-export', '/api/compat-template', '/quotes/5/../../settings', '/login']) assert.ok(!ms.memberPathAllowed(p), p);
-  assert.equal(ms.safeMemberNext('/quotes/9/summary'), '/quotes/9/summary');
-  for (const bad of ['https://evil.example', '//evil.example', '/settings', '/quotes/9/../x', '', null]) assert.equal(ms.safeMemberNext(bad), '/m');
+test('sign-in redirects stay inside the tool', () => {
+  for (const p of ['/', '/m', '/quotes/9/summary']) assert.equal(ms.safeMemberNext(p), p);
+  for (const bad of ['https://evil.example', '//evil.example', '/settings', '/quotes/9/../x', '/login', '', null]) assert.equal(ms.safeMemberNext(bad), '/m');
 });
 
 function shopifyMock(tags, { fail = false, profileFails = false } = {}) {
@@ -87,7 +85,11 @@ test('approval uses the same case-insensitive approve tag as the theme and fails
   const approved = shopifyMock(['Approve', 'wholesale']);
   const a = await portal.memberAccess('42', { config, fetcher: approved.fetcher, fresh: true });
   assert.equal(a.state, 'approved');
-  assert.deepEqual(a.member, { id: '42', name: 'Dana Installer', email: 'dana@example.com', company: 'Bright Electric' });
+  assert.deepEqual(a.member, { id: '42', name: 'Dana Installer', email: 'dana@example.com', company: 'Bright Electric', admin: false });
+  portal.clearMemberCache();
+  assert.equal((await portal.memberAccess('42', { config, fetcher: shopifyMock(['approve', 'Quote-Admin']).fetcher, fresh: true })).member.admin, true, 'admin tag on an approved account');
+  portal.clearMemberCache();
+  assert.equal((await portal.memberAccess('42', { config, fetcher: shopifyMock(['quote-admin']).fetcher, fresh: true })).state, 'pending', 'the admin tag alone grants nothing');
   assert.deepEqual(approved.calls[0].body, { grant_type: 'client_credentials', client_id: 'client', client_secret: 'hush' });
   assert.equal(approved.calls[1].body.variables.id, 'gid://shopify/Customer/42');
   portal.clearMemberCache();
@@ -219,18 +221,6 @@ test('buy now waits for a click before replacing the cart', () => {
   assert.ok(!html.buyPage({ prefix: '/apps/quote', id: 5, mode: 'add', itemCount: 1, total: 110 }).includes('data-aq-go>'));
 });
 
-test('login redirects reject control characters and the throttle uses the edge address', async () => {
-  const { safeNext } = await import('../lib/session.js');
-  for (const bad of ['/\t/evil.com', '/\x00x', '//evil.com', '/\\evil.com', 'https://evil.com']) assert.equal(safeNext(bad), '/');
-  assert.equal(safeNext('/quotes/5'), '/quotes/5');
-  const guard = await import('../lib/login-guard.js');
-  assert.equal(guard.clientAddress(new Headers({ 'x-forwarded-for': '6.6.6.6, 1.2.3.4' })), '1.2.3.4');
-  assert.equal(guard.clientAddress(new Headers({ 'x-real-ip': '9.9.9.9', 'x-forwarded-for': '6.6.6.6' })), '9.9.9.9');
-  const now = Date.now();
-  for (let i = 0; i < 8; i++) guard.recordLoginFailure('t-ip', now);
-  assert.equal(guard.loginBlocked('t-ip', now), true); assert.equal(guard.loginBlocked('other-ip', now), false);
-  assert.equal(guard.loginBlocked('t-ip', now + 16 * 60 * 1000), false);
-});
 
 test('Shopify outages are cached briefly instead of retried on every request', async () => {
   portal.clearMemberCache();
@@ -240,4 +230,20 @@ test('Shopify outages are cached briefly instead of retried on every request', a
   assert.equal((await portal.memberAccess('555', { config, fetcher: down })).state, 'unavailable');
   assert.equal(calls, 1);
   portal.clearMemberCache();
+});
+
+test('admin wipe removes quotes, history, logos, usage and source files but keeps the catalog', async () => {
+  const { wipeQuotes } = await import('../lib/wipe.js');
+  const id = memberQuote('42');
+  const file = path.join(folder, 'uploads', `${id}-wipe.pdf`); fs.writeFileSync(file, 'x');
+  db().prepare('UPDATE quotes SET file_path=? WHERE id=?').run(file, id);
+  db().prepare("INSERT INTO blobs (key,mime,data) VALUES (?, 'image/png', x'00')").run(`quote_logo_${id}`);
+  db().prepare("INSERT INTO member_usage (customer_id,kind) VALUES ('42','upload')").run();
+  const catalogBefore = db().prepare('SELECT COUNT(*) n FROM catalog_items').get().n;
+  assert.ok(wipeQuotes() >= 1);
+  await new Promise((r) => setTimeout(r, 50));
+  for (const t of ['quotes', 'quote_lines', 'quote_events', 'member_usage']) assert.equal(db().prepare(`SELECT COUNT(*) n FROM ${t}`).get().n, 0, t);
+  assert.equal(db().prepare("SELECT COUNT(*) n FROM blobs WHERE key LIKE 'quote_logo_%'").get().n, 0);
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(db().prepare('SELECT COUNT(*) n FROM catalog_items').get().n, catalogBefore);
 });

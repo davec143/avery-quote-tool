@@ -1,10 +1,20 @@
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/access';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { getSetting, setSetting, setBlob, deleteBlob, getBlob } from '@/lib/db';
 import { PROVIDERS, llmConfig, brand, mask } from '@/lib/settings';
 import { complete } from '@/lib/llm';
 import SubmitButton from '../submit-button';
+import { wipeQuotes } from '@/lib/wipe';
+
+async function wipe(formData) {
+  'use server';
+  await requireAdmin();
+  if (String(formData.get('confirm') || '').trim() !== 'DELETE') redirect('/settings?wiped=confirm');
+  const n = wipeQuotes();
+  revalidatePath('/'); revalidatePath('/m');
+  redirect(`/settings?wiped=${n}`);
+}
 
 const TEXT_KEYS = [
   'llm_provider', 'llm_model', 'llm_base_url',
@@ -14,7 +24,7 @@ const TEXT_KEYS = [
 
 async function save(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const intent = String(formData.get('intent') || 'save');
   if (intent === 'remove_logo') {
     deleteBlob('logo');
@@ -52,6 +62,7 @@ async function save(formData) {
 }
 
 export default async function SettingsPage({ searchParams }) {
+  await requireAdmin();
   const sp = await searchParams;
   const cfg = llmConfig();
   const b = brand();
@@ -59,6 +70,7 @@ export default async function SettingsPage({ searchParams }) {
   const test = sp?.test ? decodeURIComponent(sp.test) : null;
 
   return (
+    <>
     <form action={save} encType="multipart/form-data">
       <div className="spread">
         <h1>Settings</h1>
@@ -172,5 +184,14 @@ export default async function SettingsPage({ searchParams }) {
         <SubmitButton label="Save settings" name="intent" value="save" />
       </div>
     </form>
+    <form action={wipe} className="card" style={{ marginTop: 24, borderColor: '#c62828' }}>
+      <h3>Delete all quotes</h3>
+      <p className="small muted">Permanently removes every quote for every member and admin, including review history, uploaded source files and logos. The catalog, compatibility list, product specifications and settings are kept. This cannot be undone.</p>
+      {sp?.wiped === 'confirm' && <p className="error" role="alert">Type DELETE to confirm.</p>}
+      {sp?.wiped && sp.wiped !== 'confirm' && <p className="ok" role="status">Deleted {sp.wiped} quote(s).</p>}
+      <label className="small">Type DELETE to confirm<input name="confirm" autoComplete="off" /></label>
+      <div style={{ marginTop: 12 }}><SubmitButton label="Delete all quotes" pending="Deleting…" /></div>
+    </form>
+    </>
   );
 }

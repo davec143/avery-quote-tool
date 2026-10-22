@@ -15,7 +15,7 @@ A team-reviewed product comparison for Avery LED. Upload a competitor's text-bas
 
 ## Member portal
 
-Approved Avery partners use the full Quote Tool with their averyled.com account. **averyled.com/apps/quote** signs them in through Shopify (customer tag `approve`) and opens quote.averyled.com as that member. They see and edit only their own quotes, and order confirmed proposals with **Add all to cart** or **Buy now** on averyled.com. The team keeps the shared password. Details and launch checklist: [PORTAL_SETUP.md](PORTAL_SETUP.md).
+Approved Avery partners use the full Quote Tool with their averyled.com account. **averyled.com/apps/quote** signs them in through Shopify (customer tag `approve`) and opens quote.averyled.com as that member. They see and edit only their own quotes, and order confirmed proposals with **Add all to cart** or **Buy now** on averyled.com. There is no separate team password: customers who also carry the tag `quote-admin` are admins and see every quote plus the catalog, compatibility list, settings and team learning pages. Details and launch checklist: [PORTAL_SETUP.md](PORTAL_SETUP.md).
 
 ## What blocks confirmation
 
@@ -52,7 +52,7 @@ Use Node.js 22, matching `.node-version` and the deployment configuration.
 ```bash
 npm ci
 cp .env.example .env.local
-# Set APP_PASSWORD in .env.local.
+# Set the Shopify portal variables in .env.local (see PORTAL_SETUP.md).
 npm run dev
 npm test
 npm run build
@@ -64,7 +64,7 @@ Optional isolated demonstration, using sample products and prices:
 
 ```bash
 DATA_DIR=/tmp/avery-demo node scripts/seed-demo.mjs
-APP_PASSWORD=choose-a-local-password DATA_DIR=/tmp/avery-demo npm run dev
+DATA_DIR=/tmp/avery-demo npm run dev
 ```
 
 The demo seeder refuses to run when the quote database already contains quotes. Never use a production data directory for demonstration or sample runs.
@@ -116,13 +116,13 @@ Shopify requires the store's `.myshopify.com` domain and an Admin API token with
 
 ## Deployment and storage
 
-Production requires `APP_PASSWORD`. Without it, protected routes return HTTP 503. Server actions and sensitive download routes also check authentication directly. Sessions use signed, unique tokens with a seven-day server-checked expiry; users must sign in again after upgrading from v0.8.
+Every page requires a Shopify sign-in through averyled.com/apps/quote; there is no password of its own. Sessions are signed 12-hour cookies, and approval and admin status are re-checked against Shopify customer tags every minute. Server actions and download routes check ownership directly.
 
 For Railway, mount a persistent volume at `/data`, set `DATA_DIR=/data`, use Node.js 22, build with `npm run build`, and start with `npm start`. Use one writable app instance per SQLite database. Back up the volume before upgrades. Database migrations add columns to existing tables. Existing saved Avery quantities are preserved as manual quantities on upgrade and require a reviewed explanation before reconfirmation.
 
 Old “done” quotes without a saved v0.9 snapshot are shown as drafts until reviewed and confirmed again. Existing pricing-mode settings are preserved; check Settings and select whole-pack purchase cost if that matches Avery's selling terms.
 
-SQLite stores quote data, catalog, mappings, settings, product verification, review history, frozen summaries and uploaded logos. Original source files live in `DATA_DIR/uploads`. Provider and Shopify keys are stored in settings; protect and restrict access to backups. This remains a shared team-password tool, without individual user roles, public customer links, automatic sending, order submission, or warranty/stock guarantees. Review history records names entered by reviewers and before/after changes; those names are self-reported, not authenticated individual identities. Earlier changes cannot be reconstructed, and history is retained only while the quote exists.
+SQLite stores quote data, catalog, mappings, settings, product verification, review history, frozen summaries and uploaded logos. Original source files live in `DATA_DIR/uploads`. Provider and Shopify keys are stored in settings; protect and restrict access to backups. Members see only their own quotes; admins (tag `quote-admin`) see all. There are no public customer links, automatic sending, order submission, or warranty/stock guarantees. Review history records the signed-in Shopify account for members and the name entered by admins. Earlier changes cannot be reconstructed, and history is retained only while the quote exists.
 
 ## Spec sheets and unpriced source quotes
 

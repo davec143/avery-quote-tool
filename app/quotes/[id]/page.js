@@ -1,5 +1,4 @@
-import { requireAuth } from '@/lib/auth';
-import { requireQuoteAccess } from '@/lib/access';
+import { requireQuoteAccess, requireAdmin, actorName } from '@/lib/access';
 import { MEMBER_DAILY_AI_RUNS } from '@/lib/portal';
 import Link from 'next/link';
 import fs from 'node:fs';
@@ -24,7 +23,6 @@ import { duplicateQuote } from '@/lib/quote-drafts';
 import { publicReason } from '@/lib/reasons';
 import { reserveMemberUsage, MEMBER_DAILY_LIMIT, MEMBER_MAX_LINES } from '@/lib/portal';
 
-const memberName = (actor) => actor.member?.name || actor.member?.email || `Shopify customer ${actor.customerId}`;
 const CAT_LABEL = { tape: 'Tape light', driver: 'Power supplies', channel: 'Aluminum channel', connector: 'Connectors', other: 'Other' };
 const SRC_LABEL = { compat: 'Compatibility list', ai: 'AI suggestion', rules: 'Built-in rules', manual: 'Set by hand' };
 
@@ -44,7 +42,7 @@ async function save(formData) {
     for (const l of current.lines) formData.set(`decision_${l.id}`, l.decision_note || '');
     // Avery's commercial terms are set by the team; the reviewer is always the signed-in member.
     for (const key of ['lead_time', 'payment_terms', 'valid_until']) formData.set(key, current[key] || '');
-    formData.set('reviewer_name', memberName(actor));
+    formData.set('reviewer_name', actorName(actor));
   }
   if (Number(formData.get('revision')) !== current.revision) redirect(`/quotes/${id}?error=This quote changed. Reload before retrying.`);
   if (intent === 'delete') {
@@ -92,13 +90,13 @@ async function createDraft(form) {
   const id=Number(form.get('quote_id'));let newId;
   const actor = await requireQuoteAccess(id);
   if (actor.type === 'member' && !reserveMemberUsage(actor.customerId, 'upload', 1, MEMBER_DAILY_LIMIT)) redirect(`/quotes/${id}?error=${encodeURIComponent(`You can add up to ${MEMBER_DAILY_LIMIT} quotes a day, including copies. Try again tomorrow.`)}`);
-  try { newId=duplicateQuote(id,form.get('revision'),actor.type === 'member' ? memberName(actor) : 'Team'); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
+  try { newId=duplicateQuote(id,form.get('revision'),actorName(actor)); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
   revalidatePath(actor.type === 'member' ? '/m' : '/');redirect(`/quotes/${newId}?copied=${id}`);
 }
 
 async function recordOutcome(form) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const id=Number(form.get('quote_id'));
   try { saveOutcome(id,form); } catch(e) { redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`); }
   revalidatePath(`/quotes/${id}`);redirect(`/quotes/${id}?saved=1`);
@@ -341,7 +339,7 @@ export default async function QuotePage({ params, searchParams }) {
           </>}
           <label>Customer-facing project notes<textarea name="customer_notes" defaultValue={q.customer_notes || ''} /></label>
         </div>
-        {member ? <p className="small"><b>Reviewed by:</b> {memberName(actor)}</p> : <label>Reviewer name<input name="reviewer_name" defaultValue={q.reviewer_name || ''} placeholder="Required at confirmation" /></label>}
+        {member ? <p className="small"><b>Reviewed by:</b> {actorName(actor)}</p> : <label>Reviewer name<input name="reviewer_name" defaultValue={q.reviewer_name || ''} placeholder="Required at confirmation" /></label>}
         <h3>Source charges and reconciliation</h3>
         <p className="small muted">Printed source total: {fmt(printedTotal(q.raw_text))}. {hasSourcePrices ? `Known source product amounts: ${fmt(q.lines.reduce((n,l)=>n+(l.comp_unit_price ?? 0)*l.qty,0))}.` : 'Source product prices not provided.'} Recorded adjustments: {fmt(chargeTotal(charges))}. These charges are excluded from product comparisons. {missingSourcePrices && 'Full source total reconciliation is unavailable because some source prices are missing; verify every source line and quantity.'}</p>
         <div className="grid2">{Object.entries(CHARGE_LABELS).map(([kind,label])=><label key={kind}>{label}{kind==='discount' ? ' (positive deduction)' : ''}<input name={`charge_${kind}`} type="number" min="0" step="0.01" defaultValue={Math.abs(charges.find((c)=>c.kind===kind)?.amount || 0) || ''} /></label>)}</div>

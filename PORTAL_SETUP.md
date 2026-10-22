@@ -15,14 +15,14 @@ There is no separate member password. Members sign in on averyled.com with their
    - The hand-off uses a five-minute link that works once and is tied to that customer.
    - It becomes a 12-hour member sign-in on quote.averyled.com, held in a signed, HttpOnly cookie.
    - The tool re-checks the `approve` tag with Shopify at least once a minute, so removing the tag ends access at once.
-4. Members use the same screens as the team: upload, draft summary, review and adjust, confirm. They can only see their own quotes.
+4. Members use the full tool: upload, draft summary, review and adjust, confirm. They can only see their own quotes.
    - Every quote is tied to the member's Shopify customer ID.
    - Every page, action, download and API route checks ownership. Another member's quote, or a team-only quote, returns "not found".
-   - Team pages (catalog, compatibility list, settings, team learning, the all-quotes list) are blocked for members.
+   - Admin pages (catalog, compatibility list, settings, team learning, the all-quotes list) are blocked for members.
 5. A few things are hidden or blocked for members:
    - Internal notes, internal decision reasons, customer outcome and the review history are hidden.
    - "Remember" (writing to the shared compatibility list) is ignored for members.
-6. The team keeps the shared password at quote.averyled.com and sees every quote. Member quotes carry a **Member** label, and the home page lists member quotes not yet confirmed.
+6. **Admins** are Shopify customers that carry both `approve` and `quote-admin` (change the tag name with `PORTAL_ADMIN_TAG`). They sign in the same way and see every quote, the admin pages, and the internal notes, decision reasons and review history. Removing the tag in Shopify ends admin access within a minute. There is no separate team password.
 
 ## Ordering
 

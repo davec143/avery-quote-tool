@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/access';
 import { catalogBySku } from '@/lib/catalog';
 import { saveProductSpecs } from '@/lib/catalog-spec-review';
 import { productSpecs, SPEC_FIELDS } from '@/lib/product-specs';
@@ -9,12 +9,13 @@ import { parseRollLength } from '@/lib/requirements';
 import SubmitButton from '../../submit-button';
 
 async function save(form) {
-  'use server';await requireAuth();
+  'use server';await requireAdmin();
   const sku=String(form.get('sku')), url=`/catalog/${encodeURIComponent(sku)}`;
   try {saveProductSpecs(sku,form);} catch(e){redirect(`${url}?error=${encodeURIComponent(e.message)}`);}
   revalidatePath('/catalog');revalidatePath(url);redirect(`${url}?saved=1`);
 }
 export default async function ProductSpecsPage({params,searchParams}) {
+  await requireAdmin();
   const {sku}=await params,sp=await searchParams,item=catalogBySku()[sku];if(!item) notFound();
   const specs=productSpecs(item);if(!Object.hasOwn(item.specification_values || {},'length_ft')) specs.length_ft=parseRollLength(item);
   const fields=['voltage_v','pack_qty',...(item.category==='tape' ? ['width_mm','lumens_ft','watts_ft','length_ft','max_run_ft','connector_pins'] : item.category==='channel' ? ['length_ft','channel_inner_mm'] : item.category==='driver' ? ['driver_watts'] : item.category==='connector' ? ['width_mm','connector_pins'] : [])];

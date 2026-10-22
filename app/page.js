@@ -1,4 +1,4 @@
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
@@ -16,7 +16,7 @@ import { listMemberSubmissions } from '@/lib/portal';
 
 async function upload(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const files = formData.getAll('pdf').filter((f) => f && f.size);
   try { validateUploads(files); } catch (e) { redirect(`/?error=${encodeURIComponent(e.message)}`); }
   if (!listCatalog().length) redirect('/?error=Load the Avery catalog before comparing a quote');
@@ -31,6 +31,7 @@ async function upload(formData) {
 }
 
 export default async function Home({ searchParams }) {
+  await requireAdmin();
   const sp = await searchParams;
   const results=searchQuotes({query:sp?.q,status:sp?.status,outcome:sp?.outcome,page:sp?.page});
   const {quotes}=results;

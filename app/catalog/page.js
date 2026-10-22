@@ -1,4 +1,4 @@
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/access';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { listCatalog, parseShopifyCsv, replaceCatalog, syncFromShopify } from '@/lib/catalog';
@@ -9,7 +9,7 @@ import Link from 'next/link';
 
 async function uploadCsv(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const f = formData.get('csv');
   if (!f || !f.size) redirect('/catalog?error=Choose a CSV file first');
   let items;
@@ -24,7 +24,7 @@ async function uploadCsv(formData) {
 
 async function sync() {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   let n;
   try {
     n = await syncFromShopify();
@@ -36,6 +36,7 @@ async function sync() {
 }
 
 export default async function CatalogPage({ searchParams }) {
+  await requireAdmin();
   const sp = await searchParams;
   const items = listCatalog();
   const hasShopify = !!(getSetting('shopify_domain') && getSetting('shopify_token'));

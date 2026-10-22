@@ -262,3 +262,18 @@ test('member checklist and line status are explained in plain language', async (
   assert.equal(plain.plainLineStatus({ state: 'ok', our: {}, blockers: ['Voltage mismatch'], include: 1 }).label, "Doesn't fit");
   assert.match(plain.plainQuantityBasis({ our: { category: 'tape' }, quantity_mode: 'auto', qty_basis: 'Length check: 2 × 16.4 ft = 32.8 ft; Avery rolls are 16.4 ft, so 2 rolls' }), /about 32.8 ft of tape; Avery rolls are 16.4 ft/);
 });
+
+test('full-pack minimums warn and, for members, need an acknowledgement before confirming', async () => {
+  const { reviewReadiness } = await import('../lib/readiness.js');
+  const { computeQuote } = await import('../lib/quotes.js');
+  const { catalogBySku } = await import('../lib/catalog.js');
+  const id = memberQuote('42');
+  const row = computeQuote(getQuote(id), { live: true }).rows.find((r) => r.inSummary);
+  assert.ok(row.overage, 'D60 case of 10 for a smaller need is an overage');
+  assert.equal(row.overage.packQty, 10); assert.ok(row.overage.extra > 0);
+  assert.equal(reviewReadiness(getQuote(id), catalogBySku(), 'pack').length, 0, 'admins are not blocked');
+  const member = reviewReadiness(getQuote(id), catalogBySku(), 'pack', { overageAck: true });
+  assert.equal(member.length, 1); assert.equal(member[0].kind, 'overage');
+  db().prepare('UPDATE quote_lines SET overage_ack=1 WHERE quote_id=?').run(id);
+  assert.equal(reviewReadiness(getQuote(id), catalogBySku(), 'pack', { overageAck: true }).length, 0);
+});

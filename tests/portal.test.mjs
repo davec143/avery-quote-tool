@@ -247,3 +247,18 @@ test('admin wipe removes quotes, history, logos, usage and source files but keep
   assert.equal(fs.existsSync(file), false);
   assert.equal(db().prepare('SELECT COUNT(*) n FROM catalog_items').get().n, catalogBefore);
 });
+
+test('member checklist and line status are explained in plain language', async () => {
+  const plain = await import('../lib/plain.js');
+  const lines = [{ id: 7, line_ref: '1.1', comp_sku: 'COMP-TAPE' }];
+  const qty = plain.plainIssue({ kind: 'quantity', lineId: 7, detail: 'no tape length found in the source description.', target: 'line-7' }, lines);
+  assert.match(qty.title, /COMP-TAPE/); assert.match(qty.detail, /length of each piece/); assert.match(qty.action, /Include/);
+  const blocker = plain.plainIssue({ kind: 'blocker', lineId: 7, detail: 'Voltage mismatch: source 12V, Avery 24V.', target: 'line-7' }, lines);
+  assert.match(blocker.title, /doesn't fit/); assert.equal(blocker.detail, 'Voltage mismatch: source 12V, Avery 24V.');
+  assert.equal(plain.plainIssue({ kind: 'empty', message: 'x', target: 'source-review' }).title, 'Nothing is included yet');
+  assert.equal(plain.plainLineStatus({ state: 'na', our: null }).label, 'No Avery product yet');
+  assert.equal(plain.plainLineStatus({ state: 'ok', our: {}, blockers: [], quantity_problem: 'no tape length', quantity_mode: 'auto', include: 1 }).label, 'Quantity needed');
+  assert.equal(plain.plainLineStatus({ state: 'ok', our: {}, blockers: [], quantity_problem: 'no tape length', quantity_mode: 'manual', include: 1, match_kind: 'exact' }).label, 'Match');
+  assert.equal(plain.plainLineStatus({ state: 'ok', our: {}, blockers: ['Voltage mismatch'], include: 1 }).label, "Doesn't fit");
+  assert.match(plain.plainQuantityBasis({ our: { category: 'tape' }, quantity_mode: 'auto', qty_basis: 'Length check: 2 × 16.4 ft = 32.8 ft; Avery rolls are 16.4 ft, so 2 rolls' }), /about 32.8 ft of tape; Avery rolls are 16.4 ft/);
+});

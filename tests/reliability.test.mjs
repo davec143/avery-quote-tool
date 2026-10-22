@@ -14,7 +14,6 @@ const { ruleMatch, matchLines, aiMatch } = await import('../lib/match.js');
 const { assessMatch } = await import('../lib/match-safety.js');
 const { addCompatRows, lookupCompat, listCompat } = await import('../lib/compat.js');
 const { extractWithRules, extractWithAI, extractQuote } = await import('../lib/extract.js');
-const { sessionToken, validSession, safeNext } = await import('../lib/session.js');
 const item = toItem({ handle: 'driver', sku: 'AV-24V-100W-CT10', title: '24V 100W non-dimmable driver', price: 100,
   options: ['Case (10 pcs)'], specs: 'Input AC 100–240V; IP20', source: 'test' });
 const line = (id = 1, qty = 5, price = 10) => ({ id, line_ref: String(id), comp_sku: 'COMP-24V-96W', comp_desc: '24V 96W non-dimmable driver', qty,
@@ -113,13 +112,6 @@ test('a source line with contradictory unit and extended prices is kept but left
 });
 test('an unreadable quote does not erase previously reviewed lines', async () => {
   const {id}=quote();await assert.rejects(runPipeline(id,'Not a readable quote'),/No product lines/);assert.equal(getQuote(id).lines.length,1);
-});
-test('session tokens are signed, unique, expire, and cannot redirect to other origins', async () => {
-  const now=Date.now(), token=await sessionToken('test-password',now);
-  assert.equal(await validSession(token,'test-password',now),true);assert.equal(await validSession(token,'wrong',now),false);
-  assert.equal(await validSession(token,'test-password',now+8*86400000),false);assert.notEqual(token,await sessionToken('test-password',now));
-  for (const value of ['//evil.test','/\\evil.test','https://evil.test','/\nfoo']) assert.equal(safeNext(value),'/');
-  assert.equal(safeNext('/quotes/1'),'/quotes/1');
 });
 test('AI unknown SKUs, malformed quantities and partial extraction are handled conservatively', async () => {
   const original=globalThis.fetch;setSetting('llm_provider','custom');setSetting('llm_model','test');setSetting('llm_base_url','https://mock.invalid');

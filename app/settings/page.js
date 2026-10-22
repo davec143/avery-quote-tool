@@ -1,4 +1,4 @@
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/access';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { getSetting, setSetting, setBlob, deleteBlob, getBlob } from '@/lib/db';
@@ -14,7 +14,7 @@ const TEXT_KEYS = [
 
 async function save(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const intent = String(formData.get('intent') || 'save');
   if (intent === 'remove_logo') {
     deleteBlob('logo');
@@ -52,6 +52,7 @@ async function save(formData) {
 }
 
 export default async function SettingsPage({ searchParams }) {
+  await requireAdmin();
   const sp = await searchParams;
   const cfg = llmConfig();
   const b = brand();

@@ -47,18 +47,6 @@ test('extracted lines are reconciled against the printed quote total', () => {
   assert.equal(reconcileTotal('no totals', lines), null);
 });
 
-const { passwordMatches, loginBlocked, recordLoginFailure, clearLoginFailures } = await import('../lib/login-guard.js');
-test('password comparison and login throttle', () => {
-  assert.equal(passwordMatches('correct horse', 'correct horse'), true);
-  assert.equal(passwordMatches('correct horse ', 'correct horse'), false);
-  assert.equal(passwordMatches('anything', ''), false);
-  assert.equal(passwordMatches('anything', undefined), false);
-  const t = 1_000_000;
-  for (let i = 0; i < 8; i++) { assert.equal(loginBlocked('ip', t + i), false); recordLoginFailure('ip', t + i); }
-  assert.equal(loginBlocked('ip', t + 100), true);
-  assert.equal(loginBlocked('ip', t + 16 * 60 * 1000), false);
-  recordLoginFailure('other', t); clearLoginFailures('other'); assert.equal(loginBlocked('other', t), false);
-});
 
 test('length parsing separates source sections, stated totals and output per length',async()=>{
   const {sourceLength,channelSections}=await import('../lib/requirements.js');

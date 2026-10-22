@@ -40,7 +40,7 @@ export default async function MemberHome({ searchParams }) {
     <div className="spread">
       <div>
         <h1>Your quote comparisons</h1>
-        <p className="muted">Signed in as {actor.member.name || actor.member.email || 'your Avery LED account'}{actor.member.company ? ` · ${actor.member.company}` : ''}. Only you can see these quotes.</p>
+        <p className="muted">Signed in as {actor.member.name || actor.member.email || 'your Avery LED account'}{actor.member.company ? ` · ${actor.member.company}` : ''}. {actor.type === 'admin' ? <>These are the quotes you uploaded yourself; <Link href="/">All quotes</Link> shows everyone&apos;s.</> : 'Only you can see these quotes.'}</p>
       </div>
     </div>
     <form action={upload} className="card" style={{ marginTop: 16 }}>

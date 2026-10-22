@@ -1,4 +1,4 @@
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/access';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
@@ -8,7 +8,7 @@ import SubmitButton from '../submit-button';
 
 async function upload(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const f = formData.get('csv');
   if (!f || !f.size) redirect('/compatibility?error=Choose a CSV file first');
   const rows = parseCompatCsv(await f.text());
@@ -21,7 +21,7 @@ async function upload(formData) {
 
 async function addOne(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const row = {
     competitor_brand: String(formData.get('competitor_brand') || ''),
     competitor_sku: String(formData.get('competitor_sku') || '').trim(),
@@ -39,7 +39,7 @@ async function addOne(formData) {
 
 async function remove(formData) {
   'use server';
-  await requireAuth();
+  await requireAdmin();
   const id = formData.get('id');
   if (id === 'all') db().prepare('DELETE FROM compat_rows').run();
   else db().prepare('DELETE FROM compat_rows WHERE id = ?').run(Number(id));
@@ -48,6 +48,7 @@ async function remove(formData) {
 }
 
 export default async function CompatPage({ searchParams }) {
+  await requireAdmin();
   const sp = await searchParams;
   const rows = listCompat();
   const cat = catalogBySku();

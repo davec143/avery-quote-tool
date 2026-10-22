@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import {db} from '@/lib/db';
+import { requireAdmin } from '@/lib/access';
 const labels={open:'Open',reviewing:'Customer reviewing',accepted:'Customer accepted',declined:'Customer declined'};
-export default function InsightsPage() {
+export default async function InsightsPage() {
+  await requireAdmin();
   const d=db(),outcomes=d.prepare('SELECT outcome,COUNT(*) AS count FROM quotes GROUP BY outcome').all();
   const events=d.prepare("SELECT e.*,q.customer FROM quote_events e JOIN quotes q ON q.id=e.quote_id WHERE e.event_type IN ('saved','confirmed') ORDER BY e.id DESC LIMIT 1000").all();
   const corrections=events.flatMap((e)=>JSON.parse(e.details_json).changes || []).filter((c)=>Object.keys(c.fields || {}).some((k)=>['our_sku','comp_sku','comp_desc','qty','comp_unit_price'].includes(k)));

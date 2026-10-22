@@ -11,31 +11,28 @@ export const dynamic = 'force-dynamic';
 export default async function RootLayout({ children }) {
   const b = brand();
   const actor = await currentActor().catch(() => null);
-  const member = actor?.type === 'member';
   const hasLogo = !!getBlob('logo');
   return (
     <html lang="en">
       <body style={{ '--brand': b.brandColor, '--accent': b.accentColor }}>
         <header className="topbar no-print">
-          <Link href={member ? '/m' : '/'} className="wordmark">
+          <Link href={actor?.type === 'admin' ? '/' : '/m'} className="wordmark">
             {hasLogo ? <img src="/api/logo" alt={b.companyName} className="on-white" /> : <img src="/avery-logo-light.png" alt={b.companyName} />}
             <em>Quote Tool</em>
           </Link>
-          {member ? <nav>
+          {actor && <nav>
+            {actor.type === 'admin' && <Link href="/">All quotes</Link>}
             <Link href="/m">My quotes</Link>
+            {actor.type === 'admin' && <>
+              <Link href="/compatibility">Compatibility list</Link>
+              <Link href="/catalog">Catalog</Link>
+              <Link href="/settings">Settings</Link>
+              <Link href="/insights">Team learning</Link>
+            </>}
             <a href={portalConfig().storefront}>averyled.com</a>
             <form action="/member/signout" method="post" style={{ display: 'inline' }}><button type="submit" className="linklike">Sign out</button></form>
-          </nav> : actor?.type === 'staff' && <nav>
-            <Link href="/">Quotes</Link>
-            <Link href="/compatibility">Compatibility list</Link>
-            <Link href="/catalog">Catalog</Link>
-            <Link href="/settings">Settings</Link>
-            <Link href="/insights">Team learning</Link>
           </nav>}
         </header>
-        {!member && !process.env.APP_PASSWORD && (
-          <div className="banner no-print">No APP_PASSWORD is set, so anyone with the link can open this. Set one before sharing it.</div>
-        )}
         <main>{children}</main>
       </body>
     </html>

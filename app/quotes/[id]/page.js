@@ -17,6 +17,7 @@ import { alternativeOptions } from '@/lib/alternatives';
 import { quoteHistory, saveOutcome } from '@/lib/history';
 import { brand } from '@/lib/settings';
 import SourceReview from './source-review';
+import MemberReview from './member-review';
 import ProductChoice from './product-choice';
 import { reviewReadiness } from '@/lib/readiness';
 import { duplicateQuote } from '@/lib/quote-drafts';
@@ -122,6 +123,7 @@ export default async function QuotePage({ params, searchParams }) {
   const groups = Object.entries(
     catalog.reduce((acc, it) => ((acc[it.category] ||= []).push(it), acc), {})
   );
+  if (member) return <MemberReview q={q} c={c} sp={sp} readiness={readiness} suggestions={suggestions} groups={groups} save={save} createDraft={createDraft} reviewer={actorName(actor)} />;
 
   return (
     <>

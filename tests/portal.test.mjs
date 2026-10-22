@@ -231,3 +231,19 @@ test('Shopify outages are cached briefly instead of retried on every request', a
   assert.equal(calls, 1);
   portal.clearMemberCache();
 });
+
+test('admin wipe removes quotes, history, logos, usage and source files but keeps the catalog', async () => {
+  const { wipeQuotes } = await import('../lib/wipe.js');
+  const id = memberQuote('42');
+  const file = path.join(folder, 'uploads', `${id}-wipe.pdf`); fs.writeFileSync(file, 'x');
+  db().prepare('UPDATE quotes SET file_path=? WHERE id=?').run(file, id);
+  db().prepare("INSERT INTO blobs (key,mime,data) VALUES (?, 'image/png', x'00')").run(`quote_logo_${id}`);
+  db().prepare("INSERT INTO member_usage (customer_id,kind) VALUES ('42','upload')").run();
+  const catalogBefore = db().prepare('SELECT COUNT(*) n FROM catalog_items').get().n;
+  assert.ok(wipeQuotes() >= 1);
+  await new Promise((r) => setTimeout(r, 50));
+  for (const t of ['quotes', 'quote_lines', 'quote_events', 'member_usage']) assert.equal(db().prepare(`SELECT COUNT(*) n FROM ${t}`).get().n, 0, t);
+  assert.equal(db().prepare("SELECT COUNT(*) n FROM blobs WHERE key LIKE 'quote_logo_%'").get().n, 0);
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(db().prepare('SELECT COUNT(*) n FROM catalog_items').get().n, catalogBefore);
+});

@@ -62,3 +62,48 @@ test('length parsing separates source sections, stated totals and output per len
   assert.equal(tapeRolls({qty:10,comp_desc:'Total length: 80ft'},{sku:'T',specs:'Roll length 16.4ft'}).review,true);
   assert.equal(parseRollLength({specs:'Reel length 1,000ft'}),1000);
 });
+
+// Field report: "quote tool misread on 100 foot spools".
+test('spools and reels are packaged footage, not one continuous run', async () => {
+  const { parseSourceLength, tapeRolls, parseRollLength } = await import('../lib/requirements.js');
+  const avery = { sku: 'AV', category: 'tape', variant: '16.4 ft roll', title: 'Tape', specs: '', specification_values: { length_ft: 16.4, max_run_ft: 32.8 } };
+  for (const text of ['VALENT MINI 500 10mm LED Tape Light, 24V, 3500K, 100 ft. Spool', 'Tape 24V 100ft spool', "Tape 24V 100' spool", 'Tape 24V, 100 Foot Spool',
+    'Tape 24V - 100FT SPOOL', 'Tape 24V, 100-ft spool', 'Tape 24V, 100 ft/spool', 'Tape 24V, 100 ft per spool', 'Tape 24V, Spool length: 100ft',
+    'Tape 24V 100 ft. Spool, 16.4ft max run', 'Tape 24V, 100ft. spool, cut every 2in', 'Tape 24V 4.4W/ft 100 ft. Spool 36in lead']) {
+    const p = parseSourceLength(text, { quantity: 2 });
+    assert.equal(p.feet, 100, text); assert.equal(p.package, true, text);
+    const r = tapeRolls({ comp_desc: text, comp_sku: 'X', qty: 2 }, avery);
+    assert.equal(r.rolls, 13, text); assert.equal(r.review, false, text); assert.match(r.working, /200 ft/);
+  }
+  assert.equal(parseSourceLength('Tape 24V, 30.5m (100ft) reel').package, true);
+  assert.equal(tapeRolls({ comp_desc: 'Tape 16.4 ft. Spool', comp_sku: 'X', qty: 4 }, avery).rolls, 4);
+  // A run longer than a roll is still a run (needs a join plan).
+  assert.equal(tapeRolls({ comp_desc: 'Tape 24V, 200in run', comp_sku: 'X', qty: 3 }, avery).review, true);
+  // Avery spool listings are read as roll lengths.
+  assert.equal(parseRollLength({ variant: '100 ft spool', title: 'Tape', specs: '' }), 100);
+  // Unknown Avery roll length: say how much footage is needed instead of guessing.
+  const unknown = tapeRolls({ comp_desc: 'Tape 100 ft spool', comp_sku: 'X', qty: 2 }, { sku: 'AV2', variant: 'Case (10 pcs)', title: 'COB tape' });
+  assert.equal(unknown.ok, false); assert.match(unknown.problem, /needs 200 ft in total/);
+  // "100 FT" × 100 is probably 100 ft by the foot: ask instead of ordering 607 rolls.
+  assert.match(tapeRolls({ comp_desc: 'LED Tape 24V 100 FT', comp_sku: 'X', qty: 100 }, avery).problem, /may already be the footage/);
+});
+
+test('a line whose quantity cannot be calculated is not priced on the draft', async () => {
+  const { calculateComparison } = await import('../lib/comparison.js');
+  const tape = { sku: 'AV2', category: 'tape', title: 'COB tape', variant: 'Case (10 pcs)', pack_qty: 10, pack_price: 319 };
+  const q = { lines: [{ id: 1, line_ref: '1', qty: 2, comp_unit_price: 50, our_sku: 'AV2', our_qty: 2, include: 1, quantity_mode: 'auto', quantity_problem: 'the roll length of AV2 is not in the catalog specs.' }] };
+  const c = calculateComparison(q, { AV2: tape }, 'pack');
+  assert.equal(c.rows[0].state, 'needs_qty'); assert.equal(c.summaryRows.length, 0);
+  const manual = calculateComparison({ lines: [{ ...q.lines[0], quantity_mode: 'manual', our_qty: 13 }] }, { AV2: tape }, 'pack');
+  assert.equal(manual.rows[0].state, 'ok'); assert.equal(manual.summaryRows[0].ourQty, 13);
+});
+
+test('a standard Avery roll length from Settings fills in when a tape SKU has none', async () => {
+  const { tapeRolls, parseRollLength } = await import('../lib/requirements.js');
+  const cob = { sku: 'AV-COB', category: 'tape', variant: 'Case (10 pcs) / 500L', title: 'COB Tape Light', specs: '' };
+  assert.equal(parseRollLength(cob), null);
+  assert.equal(parseRollLength({ ...cob, standard_roll_ft: 16.4 }), 16.4);
+  assert.equal(tapeRolls({ comp_desc: 'Tape 24V 100 ft. Spool', comp_sku: 'X', qty: 2 }, { ...cob, standard_roll_ft: 16.4 }).rolls, 13);
+  // A verified per-SKU length still wins.
+  assert.equal(parseRollLength({ ...cob, standard_roll_ft: 16.4, specification_values: { length_ft: 32.8 } }), 32.8);
+});

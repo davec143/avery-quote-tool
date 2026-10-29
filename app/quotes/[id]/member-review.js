@@ -8,8 +8,10 @@ import SubmitButton from '../../submit-button';
 import ProductChoice from './product-choice';
 import MemberQuantity from './member-quantity';
 import SourceReview from './source-review';
+import AckAll from './ack-all';
 
 const CAT_LABEL = { tape: 'Tape light', driver: 'Power supplies', channel: 'Aluminum channel', connector: 'Connectors', other: 'Other' };
+const goodToKnow = (r) => String(r.difference_notes || '').replace(r.quantity_problem || '\u0000', '').replace(/\s+/g, ' ').trim();
 const UNIT = { tape: 'rolls', channel: 'sections', driver: 'drivers', connector: 'pieces', other: 'pieces' };
 
 export default function MemberReview({ q, c, sp, readiness, suggestions, groups, save, createDraft, reviewer }) {
@@ -18,6 +20,7 @@ export default function MemberReview({ q, c, sp, readiness, suggestions, groups,
   const pricedCount = c.counts.priced ?? c.summaryRows.filter((r) => r.theirTotal != null).length;
   const groupList = groups.map(([cat, items]) => [CAT_LABEL[cat] || cat, items.map(({ sku, title, variant, unit_price }) => ({ sku, title, variant, unit_price }))]);
   const power = c.installation.groups.filter((g) => g.blockers.length || g.conditions.length);
+  const unacked = c.rows.filter((r) => r.inSummary && r.overage && !r.overage_ack).length;
 
   return <>
     <form action={save} key={q.revision} className="member-review">
@@ -45,6 +48,7 @@ export default function MemberReview({ q, c, sp, readiness, suggestions, groups,
         {issues.length ? <>
           <h3>{issues.length === 1 ? '1 thing to sort out' : `${issues.length} things to sort out`} before you confirm</h3>
           <ol>{issues.map((i, n) => <li key={n}><a href={`#${i.target}`}><b>{i.title}</b></a>{i.detail && <div className="small">{i.detail}</div>}{i.action && <div className="small muted">{i.action}</div>}</li>)}</ol>
+          {unacked > 0 && <p className="row"><AckAll count={unacked} /><span className="small muted">Ticks every &quot;I understand&quot; box for full-pack minimums.</span></p>}
           <p className="small muted">Saving refreshes this list.</p>
         </> : <>
           <h3>Everything checks out</h3>
@@ -99,8 +103,12 @@ export default function MemberReview({ q, c, sp, readiness, suggestions, groups,
               {r.our && <div className="small muted">{r.our.sku} · {fmt(r.ourUnit)} each{r.our.pack_qty > 1 ? ` · ${fmt(r.our.pack_price)} per ${r.our.pack_label.toLowerCase()}` : ''}</div>}
               {publicReason(r.reason) && <div className="small muted">{r.our ? 'Why this one: ' : ''}{publicReason(r.reason)}</div>}
               {r.blockers?.length > 0 && <p className="callout bad"><b>This product doesn&apos;t fit:</b> {r.blockers.map(plainBlocker).join(' ')} Pick another one or leave this item out.</p>}
-              {r.our && !r.blockers?.length && r.difference_notes && <p className="callout note"><b>Good to know:</b> {r.difference_notes}</p>}
+              {r.our && !r.blockers?.length && goodToKnow(r) && <p className="callout note"><b>Good to know:</b> {goodToKnow(r)}</p>}
               {r.our && !r.blockers?.length && !r.difference_notes && status.key === 'near' && <p className="callout note"><b>Please check:</b> we couldn&apos;t verify every spec on this match. Compare it with their product before including it.</p>}
+              {r.overage && <div className="callout note">
+                <b>Full {r.overage.packLabel} minimum.</b> Avery sells this in {r.overage.packLabel}s of {r.overage.packQty}. This proposal needs {r.overage.required}, so the order is {r.overage.ordered} — {r.overage.extra} extra.
+                <label className="row" style={{ marginTop: 6 }}><input type="checkbox" name={`ack_${r.id}`} defaultChecked={!!r.overage_ack} /> <b>I understand</b> I&apos;ll get more than their quote needs</label>
+              </div>}
               {r.our && <div className="item-qty">
                 {qtyProblem && <p className="callout bad"><b>Quantity needed.</b> {plainQuantityProblem(r.quantity_problem)}</p>}
                 <MemberQuantity id={r.id} line={r.line_ref} quantity={r.ourQty} mode={r.quantity_mode || 'auto'} problem={qtyProblem ? r.quantity_problem : ''} basis={plainQuantityBasis(r)} unit={unit} />

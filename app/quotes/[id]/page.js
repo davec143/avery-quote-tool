@@ -76,10 +76,11 @@ async function save(formData) {
   }
 
   let learned;
-  try { learned = saveReview(id, formData, intent === 'confirm'); }
+  const opts = { overageAck: actor.type === 'member' };
+  try { learned = saveReview(id, formData, intent === 'confirm', opts); }
   catch (e) {
     // Preserve a valid draft when only the final confirmation checks fail.
-    if (intent === 'confirm') { try { saveReview(id, formData, false); } catch {} }
+    if (intent === 'confirm') { try { saveReview(id, formData, false, opts); } catch {} }
     redirect(`/quotes/${id}?error=${encodeURIComponent(e.message)}`);
   }
   revalidatePath(`/quotes/${id}`);
@@ -119,7 +120,7 @@ export default async function QuotePage({ params, searchParams }) {
   const hasSourcePrices=q.lines.some((l)=>l.comp_unit_price != null);
   const missingSourcePrices=q.lines.some((l)=>l.comp_unit_price == null);
   const suggestions=Object.fromEntries(q.lines.map((l)=>[l.id,alternativeOptions(q,l,catalogMap,brand().priceBasis)]));
-  const readiness=reviewReadiness(q,catalogMap,brand().priceBasis);
+  const readiness=reviewReadiness(q,catalogMap,brand().priceBasis,{overageAck:member});
   const groups = Object.entries(
     catalog.reduce((acc, it) => ((acc[it.category] ||= []).push(it), acc), {})
   );
@@ -286,6 +287,7 @@ export default async function QuotePage({ params, searchParams }) {
                   </label>
                   {!member && <label className="small">Internal decision reason<input name={`decision_${r.id}`} defaultValue={r.decision_note || ''} placeholder="Why this option or correction?" /></label>}
                   {!!r.review_required && r.our && <label className="row small"><input type="checkbox" name={`accept_${r.id}`} defaultChecked={!!r.review_accepted} /> I reviewed this option&apos;s requirements and installation/quantity plan.</label>}
+                  {r.overage && <label className="row small"><input type="checkbox" name={`ack_${r.id}`} defaultChecked={!!r.overage_ack} /> Full {r.overage.packLabel}s: {r.overage.ordered} pieces ordered for {r.overage.required} needed ({r.overage.extra} extra) — acknowledged.</label>}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   <input type="checkbox" aria-label={`Include line ${r.line_ref} in comparison`} name={`inc_${r.id}`} defaultChecked={!!r.include} disabled={r.state === 'na'} />

@@ -13,7 +13,7 @@ export default function MemberQuantity({ id, line, quantity, mode = 'auto', prob
     <input type="hidden" name={`mode_${id}`} value={manual ? 'manual' : 'auto'} />
     {manual ? <>
       <label className="mq-label">How many Avery {unit} do you need?
-        <input aria-label={`Avery pieces for line ${line}`} name={name} type="number" min="1" step="1" required defaultValue={quantity || ''} className="mq-input" autoFocus={!!problem} />
+        <input aria-label={`Avery pieces for line ${line}`} name={name} type="number" min="1" step="1" required defaultValue={problem && mode !== 'manual' ? '' : quantity || ''} className="mq-input" autoFocus={!!problem} />
       </label>
       {mode !== 'manual' && !problem && <button type="button" className="linklike small" onClick={() => setManual(false)}>Use the calculated quantity instead</button>}
     </> : <>

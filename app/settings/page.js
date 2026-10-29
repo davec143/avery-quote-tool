@@ -19,7 +19,7 @@ async function wipe(formData) {
 const TEXT_KEYS = [
   'llm_provider', 'llm_model', 'llm_base_url',
   'intake_email', 'company_name', 'company_tagline', 'contact_line', 'brand_color', 'accent_color', 'summary_disclaimer',
-  'price_basis', 'shopify_domain',
+  'price_basis', 'shopify_domain', 'tape_roll_ft',
 ];
 
 async function save(formData) {
@@ -131,6 +131,11 @@ export default async function SettingsPage({ searchParams }) {
               <option value="per_piece">Per-piece comparison estimate (assumes loose pieces can be supplied)</option>
               <option value="pack">Whole-pack purchase cost (round up pieces to cases / boxes)</option>
             </select>
+          </label>
+          <label>
+            Standard Avery tape roll length (ft)
+            <input name="tape_roll_ft" type="number" min="1" max="1000" step="0.1" defaultValue={getSetting('tape_roll_ft', '')} placeholder="e.g. 16.4" />
+            <span className="small muted" style={{ fontWeight: 400 }}>Used to convert competitor footage (cut lengths, 100 ft spools) into Avery rolls when a product&apos;s own roll length isn&apos;t verified in the catalog. Leave blank to have reps enter roll counts by hand.</span>
           </label>
           <h3 style={{ marginTop: 20 }}>Shopify (Avery store)</h3>
           <label>

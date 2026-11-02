@@ -107,3 +107,44 @@ test('a standard Avery roll length from Settings fills in when a tape SKU has no
   // A verified per-SKU length still wins.
   assert.equal(parseRollLength({ ...cob, standard_roll_ft: 16.4, specification_values: { length_ft: 32.8 } }), 32.8);
 });
+
+// Field feedback: "pull total feet and then give our closest option, but go over, not under total footage on a job".
+test('tape is sized on total job footage, rounded up once, never under', async () => {
+  const { planQuantities, packTapeJob } = await import('../lib/requirements.js');
+  const catalog = { AV: { sku: 'AV', category: 'tape', title: 'Tape', variant: '', specs: '', specification_values: { length_ft: 16.4 } } };
+  const line = (id, desc, qty) => ({ id, comp_sku: 'S' + id, comp_desc: desc, qty, our_sku: 'AV', include: 1, quantity_mode: 'auto' });
+  // Two 100 ft spools + one 50 ft reel of the same tape = 250 ft → 16 rolls (262.4 ft), not 7 + 7 + 4 = 18.
+  let out = planQuantities([line(1, 'Tape 24V 100 ft. Spool', 1), line(2, 'Tape 24V 100 ft. Spool', 1), line(3, 'Tape 24V 50 ft reel', 1)], catalog);
+  assert.equal(out.reduce((n, l) => n + l.our_qty, 0), 16);
+  assert.ok(16 * 16.4 >= 250);
+  assert.match(out[0].qty_basis, /250 ft across 3 lines/);
+  // Three 5 ft cuts fit on one roll; each line used to round up to its own roll.
+  out = planQuantities([line(1, 'Tape 24V 5ft run', 1), line(2, 'Tape 24V 5ft run', 1), line(3, 'Tape 24V 5ft run', 1)], catalog);
+  assert.equal(out.reduce((n, l) => n + l.our_qty, 0), 1);
+  // Continuous cuts never span rolls: two 10 ft runs need 2 rolls even though 20 ft < 32.8 ft.
+  out = planQuantities([line(1, 'Tape 24V 10ft run', 2)], catalog);
+  assert.equal(out[0].our_qty, 2);
+  // Spool footage fills the space left on rolls opened for cuts: 2 × 10 ft cuts leave 12.8 ft; 10 ft of spool fits there.
+  out = planQuantities([line(1, 'Tape 24V 10ft run', 2), line(2, 'Tape 24V priced per foot', 10)], catalog);
+  assert.equal(out.reduce((n, l) => n + l.our_qty, 0), 2);
+  // Excluded lines don't join the job total.
+  out = planQuantities([line(1, 'Tape 24V 100 ft. Spool', 1), { ...line(2, 'Tape 24V 100 ft. Spool', 1), include: 0 }], catalog);
+  assert.equal(out[0].our_qty, 7); assert.equal(out[1].our_qty, 7);
+  // Never under: random jobs always supply at least the job footage.
+  for (let i = 0; i < 300; i++) {
+    const entries = Array.from({ length: 1 + (i % 6) }, (_, k) => { const feet = 1 + ((i * 7 + k * 13) % 97) / 3, qty = 1 + ((i + k) % 4), cut = feet <= 16.4 && (i + k) % 2 === 0; return { qty, r: { cut, pieceFeet: feet, totalFt: feet * qty } }; });
+    const { rolls, totalFt } = packTapeJob(16.4, entries);
+    assert.ok(rolls * 16.4 * 1.005 + 1e-6 >= totalFt, `job ${i}`);
+    assert.ok(rolls <= entries.reduce((n, e) => n + (e.r.cut ? e.qty : Math.ceil(e.r.totalFt / (16.4 * 1.005))), 0), `job ${i} not worse than per-line`);
+  }
+});
+
+test('pooled tape cost follows footage, including lines allocated zero rolls', async () => {
+  const { calculateComparison } = await import('../lib/comparison.js');
+  const { planQuantities } = await import('../lib/requirements.js');
+  const item = { sku: 'AV', category: 'tape', title: 'Tape', variant: '', specs: '', pack_qty: 1, pack_price: 40, specification_values: { length_ft: 16.4 } };
+  const lines = planQuantities([1, 2, 3].map((id) => ({ id, line_ref: String(id), comp_sku: 'S' + id, comp_desc: 'Tape 24V 5ft run', qty: 1, comp_unit_price: 20, our_sku: 'AV', include: 1, quantity_mode: 'auto' })), { AV: item });
+  const c = calculateComparison({ lines }, { AV: item }, 'pack');
+  assert.equal(c.summaryRows.length, 3); assert.equal(c.orders[0].packs, 1);
+  assert.deepEqual(c.summaryRows.map((r) => r.ourTotal), [13.34, 13.33, 13.33]);
+});

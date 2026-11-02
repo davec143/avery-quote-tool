@@ -4,6 +4,7 @@ import { brand } from '@/lib/settings';
 import { getBlob } from '@/lib/db';
 import { currentActor } from '@/lib/access';
 import { portalConfig } from '@/lib/shopify-portal';
+import Clarity from './clarity';
 
 export const metadata = { title: 'Avery Quote Tool', description: 'Compare competitor quotes against Avery LED pricing' };
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,10 @@ export default async function RootLayout({ children }) {
           </nav>}
         </header>
         <main>{children}</main>
+        <Clarity
+          user={actor ? { id: actor.member?.email || `shopify-${actor.customerId}`, name: actor.member?.name || actor.member?.email } : null}
+          tags={{ app: 'quote-tool', role: actor?.type || 'signed-out', company: actor?.member?.company }}
+        />
       </body>
     </html>
   );
